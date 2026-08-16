@@ -1475,10 +1475,38 @@ class FanqieBot:
         #    发帖入口(发讨论/发帖/写点感悟/我要发言)再进入编辑页
         ed = self.d(className="android.widget.EditText")
         if not ed.exists(3.0):
-            if not (self.click_text("趣评千万条，你也来一条", 2.0, fuzzy=True)
-                    or self.click_text("去圈子", 2.0)
-                    or self.click_text("发讨论", 2.0) or self.click_text("发帖", 2.0)
-                    or self.click_text("写点感悟", 2.0) or self.click_text("我要发言", 2.0)):
+            # 讨论列表页(空讨论区)/工具栏拦截: 需点底部引导「趣评千万条，你也来一条」、
+            # 「去圈子」或发帖入口(发讨论/发帖/写点感悟/我要发言)进入编辑页(有 EditText+发表)。
+            # Compose 文本 click 偶尔无效(实测文本在但点不动), 用坐标兜底(从 dump 提取 bounds
+            # 点中心, 实测可靠) + 点击后轮询等待 EditText 出现, 入口列表最多重试 3 轮
+            _entries = ("趣评千万条，你也来一条", "去圈子", "发讨论", "发帖", "写点感悟", "我要发言")
+            _got_ed = False
+            for _round in range(3):
+                for _t in _entries:
+                    _ok = self.click_text(_t, 1.2, fuzzy=True)
+                    if not _ok:
+                        # 坐标兜底: 提取该文本 bounds 点中心
+                        try:
+                            _xml2 = self.d.dump_hierarchy()
+                            _mm = re.search(
+                                rf'text="[^"]*{re.escape(_t)}[^"]*"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"',
+                                _xml2)
+                            if _mm:
+                                _x1, _y1, _x2, _y2 = map(int, _mm.groups())
+                                self.d.click((_x1 + _x2) // 2, (_y1 + _y2) // 2)
+                                _ok = True
+                        except Exception:
+                            pass
+                    if _ok:
+                        self.sleep_human(1.2, 2.0)
+                        if self.d(className="android.widget.EditText").exists(3.0):
+                            _got_ed = True
+                            break
+                        # 点了但编辑框未出现(页面慢/点到别处): 试下一个入口
+                if _got_ed:
+                    break
+                self.sleep_human(1.0, 1.5)
+            if not _got_ed:
                 self.log.warning("书评: 未找到评论输入框/发帖入口")
                 return "fail"
             self.sleep_human(2.0, 3.0)
