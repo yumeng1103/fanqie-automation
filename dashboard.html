@@ -762,6 +762,7 @@ let mRows = [];     // 编辑弹窗的书籍编辑缓冲
 let statusFails = 0;
 let lastPanelsSig = '';
 let lastStatusHtml = '';
+let deviceNames = {};   // {serial: 备注名} 设备备注名缓存
 
 async function jfetch(url, opts, timeoutMs) {
   const ctrl = new AbortController();
@@ -780,6 +781,38 @@ function esc(s) {
 function normSerial(s) {
   s = String(s || '');
   return /^\d+\.\d+\.\d+\.\d+$/.test(s) ? s + ':5555' : s;
+}
+/* 设备备注名: 有备注名返回备注名, 否则返回序列号 */
+function devName(serial) {
+  const n = (deviceNames[serial] || deviceNames[normSerial(serial)] || '').trim();
+  return n || String(serial);
+}
+/* 设备名 HTML: 有备注名则大字显示备注名+小字序列号, 否则显示序列号 */
+function devNameHtml(serial) {
+  const n = (deviceNames[serial] || deviceNames[normSerial(serial)] || '').trim();
+  if (!n) return `<code>${esc(serial)}</code>`;
+  return `<b>${esc(n)}</b><br><small style="color:var(--muted)">${esc(serial)}</small>`;
+}
+/* 拉取设备备注名映射 */
+async function loadDeviceNames() {
+  try {
+    const r = await jfetch('/api/device-names', {}, 5000);
+    if (r && r.names) deviceNames = r.names;
+    renderBookTable();
+  } catch (e) { /* 静默: 服务未就绪时保持缓存 */ }
+}
+/* 编辑设备备注名 */
+async function editDeviceName(serial) {
+  const cur = (deviceNames[serial] || deviceNames[normSerial(serial)] || '').trim();
+  const name = prompt('给设备 ' + serial + ' 设置备注名(留空 = 清除备注):', cur);
+  if (name === null) return;
+  const r = await jfetch('/api/device-name',
+    { method: 'POST', body: JSON.stringify({ serial, name: name.trim() }) }, 6000);
+  if (r && r.result) {
+    loadDeviceNames();
+  } else {
+    alert((r && r.error) || '保存备注失败');
+  }
 }
 /* 已接入设备去重列表(防止 devices.json 里同一台设备存在两种 key) */
 function getManagedUnique() {
@@ -854,7 +887,7 @@ function renderStatusCards() {
       '<tr><td colspan="6" class="empty-hint">(未配置书籍)</td></tr>';
     return `
     <div class="dev-block">
-      <div class="dev-head"><code>${esc(d.serial)}</code> ${pill}<span class="step-tag">step: ${esc(d.step || '-')}</span></div>
+      <div class="dev-head">${devNameHtml(d.serial)} ${pill}<span class="step-tag">step: ${esc(d.step || '-')}</span></div>
       <div class="kv">
         <span class="k">当前书籍</span><span class="v">${esc(d.current_book || '-')}</span>
         <span class="k">累计翻页</span><span class="v">${d.pages || 0}</span>
@@ -938,6 +971,7 @@ async function manageDevice(serial, enabled) {
     hint.textContent = r.error || r.result;
     refreshDevices();
     refreshStatus();
+    loadDeviceNames();
   } catch (e) {
     hint.className = 'msg err';
     hint.textContent = '操作失败: ' + (e.name === 'AbortError' ? '请求超时' : '服务无响应');
@@ -1010,7 +1044,8 @@ function renderBookTable() {
         : '<span class="pill offline">未知</span>';
       const n = (bookRowsBySerial[s] || []).length;
       return '<tr data-serial="' + esc(s) + '">' +
-        '<td><code>' + esc(s) + '</code></td>' +
+        '<td>' + devNameHtml(s) +
+        ' <button class="btn-mini" title="设置设备备注名" onclick="editDeviceName(\'' + esc(s) + '\')">✏</button></td>' +
         '<td>' + pill + '</td>' +
         '<td class="bt-count" id="btc-' + esc(s) + '">' + (n ? n + ' 本' : '—') + '</td>' +
         '<td><button class="btn-mini primary" onclick="openBookModal(\'' + esc(s) + '\')">✏ 编辑</button></td>' +
@@ -1424,7 +1459,7 @@ document.querySelectorAll('.card').forEach(card => {
   btn.addEventListener('click', () => card.classList.toggle('collapsed'));
   h2.appendChild(btn);
 });
-loadCfg(); starLoad(); refreshDevices(); refreshStatus(); refreshShot(); refreshLog(); refreshHealth(); tick();
+loadCfg(); starLoad(); refreshDevices(); refreshStatus(); refreshShot(); refreshLog(); refreshHealth(); tick(); loadDeviceNames();
 setInterval(refreshStatus, 2000);
 setInterval(refreshDevices, 5000);
 setInterval(refreshShot, 4000);

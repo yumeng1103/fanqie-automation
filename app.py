@@ -454,6 +454,7 @@ def save_device_books(serial: str, books: list) -> str:
             "gift_count": max(1, int(b.get("gift_count", 3))),
             "urge": bool(b.get("urge", True)),
             "review": bool(b.get("review", True)),
+            "add_shelf": bool(b.get("add_shelf", True)),
             "completed": bool(b.get("completed", False)),
             "update_time": str(b.get("update_time", "")).strip(),
         })
@@ -468,10 +469,34 @@ def save_device_books(serial: str, books: list) -> str:
     return f"已保存 {len(cleaned)} 本书(设备 {serial})"
 
 
+def set_device_name(serial: str, name: str) -> str:
+    """给设备设置备注名(devices.json 的 serial 下 name 字段, 透传保留其他字段)。"""
+    if not serial:
+        return "设备不能为空"
+    name = str(name).strip()[:20]
+    devs = load_devices()
+    cfg = devs.get(serial)
+    if not isinstance(cfg, dict):
+        cfg = devs[serial] = {"enabled": True, "books": []}
+    cfg["name"] = name
+    save_devices(devs)
+    reload_config()
+    log.info("设备 %s 备注名已设置: %r", serial, name)
+    return f"设备 {serial} 备注名已保存" + (f": {name}" if name else " (已清空)")
+
+
+def get_device_names() -> dict:
+    """返回已接入设备的备注名映射 {serial: name}。"""
+    devs = load_devices()
+    return {s: str(cfg.get("name", "")).strip() for s, cfg in devs.items()
+            if isinstance(cfg, dict) and cfg.get("enabled")}
+
+
 def _books_view(serial: str) -> list:
     return [
         {"name": b.name, "enabled": b.enabled, "gift": b.gift, "gift_count": b.gift_count,
-         "urge": b.urge, "review": b.review, "completed": b.completed, "update_time": b.update_time}
+         "urge": b.urge, "review": b.review, "add_shelf": b.add_shelf,
+         "completed": b.completed, "update_time": b.update_time}
         for b in load_books_for_serial(serial)
     ]
 
@@ -548,6 +573,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/devices":
             self._json({"devices": list_devices(), "managed": get_managed_serials()})
+            return
+        if path == "/api/device-names":
+            self._json({"names": get_device_names()})
             return
         if path == "/api/books":
             serial = (qs.get("serial") or [""])[0]
@@ -630,6 +658,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"result": set_device_enabled(serial, enabled)})
             except Exception as exc:
                 self._json({"error": f"接入失败: {exc}"}, 400)
+            return
+        if path == "/api/device-name":
+            try:
+                data = json.loads(raw.decode("utf-8") or "{}")
+                serial = str(data.get("serial", "")).strip()
+                name = str(data.get("name", "")).strip()
+                if not serial:
+                    self._json({"error": "设备不能为空"}, 400)
+                    return
+                self._json({"result": set_device_name(serial, name)})
+            except Exception as exc:
+                self._json({"error": f"保存备注失败: {exc}"}, 400)
             return
         if path == "/api/books":
             try:
