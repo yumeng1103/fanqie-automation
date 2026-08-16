@@ -93,6 +93,7 @@ class BookTask:
     review: bool = True     # 看完后自动发一条书评(读者自然语言)
     completed: bool = False  # 已读完最后一章并跑完流程, 后续轮次直接跳过
     update_time: str = ""   # 作者更新时间(如 "18:00"); 设置后每天到「该时间+1分钟」才跑这本书(读完也重跑, 读新章节)
+    add_shelf: bool = True  # 是否加入书架(默认加入; false 时跳过所有「加入书架」操作)
 
 
 @dataclass
@@ -134,6 +135,7 @@ def load_books_from_json(path: Path = BOOKS_FILE) -> list:
                 urge=bool(b.get("urge", True)),
                 review=bool(b.get("review", True)),
                 update_time=str(b.get("update_time", "")).strip(),
+                add_shelf=bool(b.get("add_shelf", True)),
             )
         )
     return books
@@ -215,6 +217,7 @@ def load_books_for_serial(serial: str) -> list:
                 review=bool(b.get("review", True)),
                 completed=bool(b.get("completed", False)),
                 update_time=str(b.get("update_time", "")).strip(),
+                add_shelf=bool(b.get("add_shelf", True)),
             )
         )
     return books
@@ -274,6 +277,7 @@ def load_config(path: Path, serial: str | None = None) -> Config:
                     gift_count=int(b.get("gift_count", 3)),
                     urge=bool(b.get("urge", True)),
                     review=bool(b.get("review", True)),
+                    add_shelf=bool(b.get("add_shelf", True)),
                 )
             )
         if not books:  # 兼容旧配置: 单本书
@@ -388,6 +392,7 @@ class FanqieBot:
         self.pages = 0
         self.rt = rt if rt is not None else RUNTIME  # 多设备时每台设备独立运行状态
         self._bookshelf_done = False   # 每本书只点一次「加入书架」
+        self._add_shelf_enabled = True  # 是否加入书架(默认 True; run_book 按书配置覆盖)
         self._reached_end = False      # 本轮是否读到书末页(催更卡片出现)
         self._state_full: dict = {}
         self.state: dict = self._load_state()
@@ -609,7 +614,7 @@ class FanqieBot:
         except Exception:
             pass
         # 1) 加入书架: 每本书只点一次(书籍详情页按钮/阅读器菜单/「加入书架?」弹窗)
-        if not self._bookshelf_done and self.click_text("加入书架", timeout):
+        if self._add_shelf_enabled and not self._bookshelf_done and self.click_text("加入书架", timeout):
             self._bookshelf_done = True
             self.sleep_human(0.8, 1.5)
             return True
@@ -1682,6 +1687,7 @@ class FanqieBot:
         gifts_sent = min(self._gifted_today(name), want_gifts) if bt.gift else want_gifts
         gift_fail = 0  # 连续送礼物失败次数(>=3 跳过送礼物环节, 防止死循环)
         self._bookshelf_done = False
+        self._add_shelf_enabled = bt.add_shelf  # 是否加入书架(可配置)
         self._reached_end = False
         self.rt.update(current_book=name, step="搜索进书", pages=0)
         self.rt.set_book(idx, status="搜索进书", urged=urged, gifts=gifts_sent)
@@ -1717,7 +1723,7 @@ class FanqieBot:
                 continue
             # 加入书架: 首次进阅读器且还没加到(如搜索结果直达阅读器无详情页),
             # 打开阅读器菜单点顶栏「加入书架」; 已加时按钮显示「已加书架」, 视为已加入
-            if not self._bookshelf_done and shelf_tries < 3:
+            if bt.add_shelf and not self._bookshelf_done and shelf_tries < 3:
                 shelf_tries += 1
                 self.d.click(0.5, 0.5)  # 屏幕中间唤出阅读器菜单
                 self.sleep_human(1.0, 1.8)

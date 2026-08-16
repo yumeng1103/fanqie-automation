@@ -722,6 +722,9 @@
           <label class="switch" title="看完后自动发一条书评(读者自然语言), 取消勾选=不发书评">
             <input type="checkbox" id="abReview" checked><span class="slider"></span>
           </label><span class="row-label">书评</span>
+          <label class="switch" title="读这本书时加入书架, 取消勾选=不加入书架">
+            <input type="checkbox" id="abAddShelf" checked><span class="slider"></span>
+          </label><span class="row-label">加书架</span>
           <label class="switch" title="已完成=已读完最后一章并跑完流程, 后续跳过">
             <input type="checkbox" id="abCompleted"><span class="slider"></span>
           </label><span class="row-label">已完成</span>
@@ -1104,6 +1107,13 @@ function renderModalRows() {
         <span class="row-label">书评</span>
       </span>
       <span class="grp">
+        <label class="switch" title="读这本书时加入书架, 取消勾选=不加入书架">
+          <input type="checkbox" ${b.add_shelf !== false ? 'checked' : ''} onchange="mRows[${i}].add_shelf=this.checked">
+          <span class="slider"></span>
+        </label>
+        <span class="row-label">加书架</span>
+      </span>
+      <span class="grp">
         <label class="switch" title="已完成=已读完最后一章并跑完流程, 后续跳过; 取消勾选=重新跑">
           <input type="checkbox" ${b.completed ? 'checked' : ''} onchange="mRows[${i}].completed=this.checked">
           <span class="slider"></span>
@@ -1123,7 +1133,7 @@ document.getElementById('bookModal').addEventListener('click', (e) => {
 });
 
 function addBookInModal() {
-  mRows.push({ name: '', enabled: true, gift: false, gift_count: 3, urge: true, review: true, completed: false, update_time: '' });
+  mRows.push({ name: '', enabled: true, gift: false, gift_count: 3, urge: true, review: true, add_shelf: true, completed: false, update_time: '' });
   renderModalRows();
 }
 
@@ -1161,6 +1171,7 @@ function openAddBookModal() {
   document.getElementById('abGiftCount').value = 3;
   document.getElementById('abUrge').checked = true;
   document.getElementById('abReview').checked = true;
+  document.getElementById('abAddShelf').checked = true;
   document.getElementById('abCompleted').checked = false;
   document.getElementById('abUpdateTime').value = '';
   const devs = getManagedUnique();
@@ -1197,6 +1208,7 @@ async function saveAddBookModal() {
     gift_count: parseInt(document.getElementById('abGiftCount').value || 3, 10),
     urge: document.getElementById('abUrge').checked,
     review: document.getElementById('abReview').checked,
+    add_shelf: document.getElementById('abAddShelf').checked,
     completed: document.getElementById('abCompleted').checked,
     update_time: document.getElementById('abUpdateTime').value
   };
