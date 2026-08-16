@@ -889,28 +889,62 @@ class FanqieBot:
         返回 (实际送出次数, 额度是否已用完)。
         """
         d = self.d
+        # 面板标记: 「送礼记录」为 RewardActivity 专属标题; 「看广告支持作者」为面板内容区按钮
+        _markers = (GIFT_PANEL_MARKER, "看广告支持作者")
         opened = False
-        for _ in range(3):
-            if d(text=GIFT_PANEL_MARKER).exists(1.2):
+
+        def _panel_open() -> bool:
+            """轮询检测面板标记是否出现(每次检测+短等, 共约 6-10 秒, 覆盖面板慢加载)"""
+            for _ in range(6):
+                try:
+                    if any(d(text=m).exists(1.0) for m in _markers):
+                        return True
+                except Exception:
+                    pass
+                self.sleep_human(0.8, 1.0)
+            return False
+
+        for _ in range(4):
+            # 1) 面板可能已经开着(之前尝试已打开): 直接确认, 避免重复点击误关面板
+            if _panel_open():
                 opened = True
                 break
-            if self.click_text(GIFT_ENTRY_TEXT, 1.5):
-                self.sleep_human(1.5, 2.5)
-                opened = d(text=GIFT_PANEL_MARKER).exists(2.0)
-                break
-            # 书末卡片页的礼物入口是礼物图标(Compose 绘制, 无「送礼物」文本):
-            # 实测位置约 (658,373) = (0.914,0.291); 非书末页点到正文无反应, 无害
+            # 2) 点「送礼物」文本(书末页/阅读器有该按钮; Compose 文本 click 偶尔无效,
+            #    失败时用坐标兜底: 从 dump 提取「送礼物」bounds 点中心, 实测可靠)
+            _clicked = self.click_text(GIFT_ENTRY_TEXT, 1.0)
+            if not _clicked:
+                try:
+                    _xml = d.dump_hierarchy()
+                    _m = re.search(r'text="送礼物"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', _xml)
+                    if _m:
+                        _x1, _y1, _x2, _y2 = map(int, _m.groups())
+                        d.click((_x1 + _x2) // 2, (_y1 + _y2) // 2)
+                        _clicked = True
+                except Exception:
+                    pass
+            if _clicked:
+                if _panel_open():
+                    opened = True
+                    break
+            # 3) 书末卡片页的礼物入口是礼物图标(Compose 绘制, 无「送礼物」文本):
+            #    实测位置约 (658,373) = (0.914,0.291); 非书末页点到正文无反应, 无害
             try:
                 d.click(0.914, 0.291)
             except Exception:
                 pass
-            self.sleep_human(1.5, 2.5)
-            if d(text=GIFT_PANEL_MARKER).exists(2.0):
+            if _panel_open():
                 opened = True
                 break
             self.sleep_human(1.0, 1.5)
         if not opened:
-            self.log.warning("礼物面板未打开")
+            self.log.warning("礼物面板未打开(已重试多轮)")
+            # 恢复页面: 若面板半开, 按返回关掉, 回到书末卡片页
+            try:
+                if str(d.app_current().get("activity", "")).endswith("RewardActivity"):
+                    d.press("back")
+                    self.sleep_human(1.0, 1.5)
+            except Exception:
+                pass
             return 0, False
         # 面板内容加载: 新版面板打开后先显示「登录后送礼物支持作者吧」占位,
         # 点击占位文本区域可触发内容加载; 等「看广告支持作者」按钮出现(最多约12秒)
@@ -1395,22 +1429,36 @@ class FanqieBot:
             # 被工具栏拦截(仍停在书末卡片页), 收起工具栏后重试
             for _retry in range(3):
                 if self.click_text("本章讨论", 2.0) or self.click_text("发讨论", 2.0):
-                    self.sleep_human(1.0, 1.5)
-                    try:
-                        _ax = self.d.dump_hierarchy()
+                    # 编辑页(AITextTemplateActivity)加载较慢, 轮询等待其出现
+                    # (「下一步/预测剧情/趣评/去圈子/发帖/我要发言/EditText」任一出现即成功)
+                    _in_ed = False
+                    for _w in range(5):
+                        self.sleep_human(1.0, 1.2)
+                        try:
+                            _ax = self.d.dump_hierarchy()
+                        except Exception:
+                            _ax = ""
                         if any(t in _ax for t in ("趣评", "去圈子", "发帖", "我要发言", "预测剧情", "下一步")) or "EditText" in _ax:
-                            entered = True
-                            _entry_kind = "discussion"
+                            _in_ed = True
                             break
-                        # 点击后被工具栏拦截(仍停在书末卡片页): 收起工具栏后重试
-                        self.log.info("书评: 点「本章讨论」后未进入讨论页, 收起工具栏重试")
-                        self.d.click(0.5, 0.5)
-                        self.sleep_human(0.8, 1.5)
-                    except Exception:
+                    if _in_ed:
                         entered = True
                         _entry_kind = "discussion"
                         break
+                    # 点击后被工具栏拦截(仍停在书末卡片页): 收起工具栏后重试
+                    self.log.info("书评: 点「本章讨论」后未进入讨论页, 收起工具栏重试")
+                    self.d.click(0.5, 0.5)
+                    self.sleep_human(0.8, 1.5)
                 self.sleep_human(1.0, 1.5)
+        if not entered:
+            # 兜底: 编辑页加载慢可能导致上面的轮询也误判, 退出前再查一次当前页面
+            try:
+                _ax = self.d.dump_hierarchy()
+                if any(t in _ax for t in ("趣评", "去圈子", "发帖", "我要发言", "预测剧情", "下一步")) or "EditText" in _ax:
+                    entered = True
+                    _entry_kind = "discussion"
+            except Exception:
+                pass
         if not entered:
             self.log.warning("书评: 书末页未找到「写点感悟」评论入口")
             return "fail"
@@ -1632,6 +1680,7 @@ class FanqieBot:
         want_gifts = bt.gift_count if bt.gift else 0
         urged = not self._can_urge_today(name)
         gifts_sent = min(self._gifted_today(name), want_gifts) if bt.gift else want_gifts
+        gift_fail = 0  # 连续送礼物失败次数(>=3 跳过送礼物环节, 防止死循环)
         self._bookshelf_done = False
         self._reached_end = False
         self.rt.update(current_book=name, step="搜索进书", pages=0)
@@ -1890,10 +1939,18 @@ class FanqieBot:
             if bt.gift and gifts_sent < want_gifts and self.d(text=GIFT_ENTRY_TEXT).exists(1.0):
                 self.rt.update(step="送礼物")
                 n, exhausted = self._send_free_gifts(want_gifts - gifts_sent)
-                gifts_sent += n
                 if n:
+                    gift_fail = 0
+                    gifts_sent += n
                     self._mark_gifted(name, gifts_sent)
                     self.rt.set_book(idx, gifts=gifts_sent)
+                else:
+                    gift_fail += 1
+                    self.log.warning("《%s》送礼物失败第 %d 次(连续3次则跳过送礼物环节)", name, gift_fail)
+                    if gift_fail >= 3:
+                        self.log.warning("《%s》连续3次送礼物失败, 本次跳过送礼物环节(不再死循环)", name)
+                        gifts_sent = want_gifts
+                        self.rt.set_book(idx, gifts=want_gifts)
                 if exhausted:
                     self.log.info("《%s》免费礼物环节结束(实际送出 %d 次)", name, gifts_sent)
                     self._mark_gifted(name, gifts_sent)
