@@ -18,16 +18,21 @@ import sys
 import threading
 import time
 import traceback
+import urllib.error
+import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
+
+import yaml
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.yaml"
 HTML_FILE = BASE_DIR / "dashboard.html"
 LAST_RUN_FILE = BASE_DIR / "last_run.txt"
 SERVICE_LOG = BASE_DIR / "service.log"
+VISION_SUMMARIES_FILE = BASE_DIR / "vision_summaries.json"
 
 sys.path.insert(0, str(BASE_DIR))
 from fanqie_reader import (  # noqa: E402
@@ -41,6 +46,8 @@ from fanqie_reader import (  # noqa: E402
     save_devices,
     update_due,
 )
+from vision_reader import extract_model_ids  # noqa: E402
+from publisher_service import PUBLISHER  # noqa: E402
 
 HOST = "0.0.0.0"  # 监听所有网卡: 本机 http://127.0.0.1:8899, 局域网 http://<本机IP>:8899
 PORT = 8899
@@ -332,6 +339,11 @@ def scheduler_loop() -> None:
                 pass
             if now.hour * 60 + now.minute >= 1 and last != today:
                 log.info("调度触发: 执行今日任务")
+                # 每天 00:00 重置所有书 completed, 让「已完成」的书也重新进入流程
+                try:
+                    reset_all_completed()
+                except Exception as exc:
+                    log.error("每日重置完成状态失败: %s", exc)
                 try:
                     LAST_RUN_FILE.write_text(today, encoding="utf-8")
                 except OSError:
@@ -454,6 +466,7 @@ def save_device_books(serial: str, books: list) -> str:
             "gift_count": max(1, int(b.get("gift_count", 3))),
             "urge": bool(b.get("urge", True)),
             "review": bool(b.get("review", True)),
+            "ai_summary": bool(b.get("ai_summary", True)),
             "add_shelf": bool(b.get("add_shelf", True)),
             "completed": bool(b.get("completed", False)),
             "update_time": str(b.get("update_time", "")).strip(),
@@ -467,6 +480,27 @@ def save_device_books(serial: str, books: list) -> str:
     reload_config()
     log.info("设备 %s 书籍已保存: %d 本", serial, len(cleaned))
     return f"已保存 {len(cleaned)} 本书(设备 {serial})"
+
+
+def reset_all_completed() -> int:
+    """每天 00:00 重置所有设备所有书籍的 completed 为 False。
+
+    这样每天任务的「已完成」书也会重新进入流程(靠番茄App续读点续读到最新章),
+    每日礼物/催更照做, 书评仍由 _reviewed 去重(每本只发一条, 不重复)。
+    """
+    d = load_devices()
+    changed = 0
+    for serial, cfg in d.items():
+        if not isinstance(cfg, dict):
+            continue
+        for b in cfg.get("books") or []:
+            if isinstance(b, dict) and b.get("completed"):
+                b["completed"] = False
+                changed += 1
+    if changed:
+        save_devices(d)
+    log.info("每日重置完成状态: 重置 %d 本书 completed", changed)
+    return changed
 
 
 def set_device_name(serial: str, name: str) -> str:
@@ -495,10 +529,124 @@ def get_device_names() -> dict:
 def _books_view(serial: str) -> list:
     return [
         {"name": b.name, "enabled": b.enabled, "gift": b.gift, "gift_count": b.gift_count,
-         "urge": b.urge, "review": b.review, "add_shelf": b.add_shelf,
+         "urge": b.urge, "review": b.review, "ai_summary": b.ai_summary, "add_shelf": b.add_shelf,
          "completed": b.completed, "update_time": b.update_time}
         for b in load_books_for_serial(serial)
     ]
+
+
+def _vision_config_view() -> dict:
+    """Return visual settings without ever returning the API key."""
+    cfg = get_config()
+    return {
+        "enabled": bool(cfg.ai_vision_enabled),
+        "base_url": cfg.ai_vision_base_url,
+        "model": cfg.ai_vision_model,
+        "summary_model": cfg.ai_vision_summary_model,
+        "timeout": cfg.ai_vision_timeout,
+        "detail": cfg.ai_vision_detail,
+        "max_pages": cfg.ai_vision_max_pages,
+        "max_chars_per_page": cfg.ai_vision_max_chars_per_page,
+        "summary_enabled": cfg.ai_vision_summary_enabled,
+        "summary_max_chars": cfg.ai_vision_summary_max_chars,
+        "concurrency": cfg.ai_vision_concurrency,
+        "api_key_configured": bool(cfg.ai_vision_api_key),
+        "api_key": "********" if cfg.ai_vision_api_key else "",
+    }
+
+
+def _save_vision_config(data: dict) -> str:
+    """Update only the ``ai.vision`` block while preserving other AI settings."""
+    if not isinstance(data, dict):
+        raise ValueError("配置必须是 JSON 对象")
+    raw = yaml.safe_load(CONFIG_FILE.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        raise ValueError("配置必须是 YAML 映射")
+    ai = raw.setdefault("ai", {})
+    if not isinstance(ai, dict):
+        ai = raw["ai"] = {}
+    current = ai.get("vision") if isinstance(ai.get("vision"), dict) else {}
+    allowed = {
+        "enabled": bool, "base_url": str, "model": str, "summary_model": str, "timeout": int,
+        "detail": str, "max_pages": int, "max_chars_per_page": int,
+        "summary_enabled": bool, "summary_max_chars": int, "concurrency": int,
+    }
+    for key, typ in allowed.items():
+        if key not in data:
+            continue
+        value = data[key]
+        if typ is int:
+            try:
+                value = int(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{key} 必须是数字") from exc
+        elif typ is str:
+            value = str(value or "").strip()
+        elif typ is bool:
+            value = bool(value)
+        current[key] = value
+    if data.get("api_key") and str(data.get("api_key")).strip() not in {"********", "••••••••"}:
+        ai["api_key"] = str(data["api_key"]).strip()
+    ai["vision"] = current
+    CONFIG_FILE.write_text(yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    reload_config()
+    return "视觉阅读配置已保存"
+
+
+def _redact_api_keys(text: str) -> str:
+    """Mask YAML API key values before displaying advanced configuration."""
+    return re.sub(r"(?im)^(\s*api_key\s*:\s*)([^#\r\n]*)", r'\1"********"', text)
+
+
+def _restore_masked_api_keys(text: str, original: str) -> str:
+    """Keep an existing key when the browser submits the displayed mask."""
+    try:
+        old = yaml.safe_load(original) or {}
+        key = str((old.get("ai") or {}).get("api_key", "") or "")
+    except Exception:
+        key = ""
+    if not key:
+        return text
+    return re.sub(
+        r"(?im)^(\s*api_key\s*:\s*)['\"]?(?:\*{4,}|•{4,})['\"]?\s*$",
+        lambda match: match.group(1) + '"' + key.replace('"', '\\"') + '"',
+        text,
+    )
+
+
+def _fetch_vision_models(data: dict | None = None) -> dict:
+    """Fetch model IDs from the configured OpenAI-compatible ``/models`` API."""
+    data = data if isinstance(data, dict) else {}
+    cfg = get_config()
+    base_url = str(data.get("base_url") or cfg.ai_vision_base_url or "").strip().rstrip("/")
+    if not base_url:
+        raise ValueError("请先填写接口地址")
+    api_key = str(data.get("api_key") or "").strip()
+    if api_key in {"********", "••••••••"} or not api_key:
+        api_key = cfg.ai_vision_api_key
+    if not api_key:
+        raise ValueError("请先填写 API Key")
+    req = urllib.request.Request(
+        base_url + "/models",
+        headers={"Authorization": "Bearer " + api_key, "Accept": "application/json"},
+        method="GET",
+    )
+    timeout = max(5, min(60, int(data.get("timeout") or cfg.ai_vision_timeout or 30)))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:300]
+        raise ValueError(f"接口返回 HTTP {exc.code}: {detail}") from exc
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        raise ValueError(f"模型检测请求失败: {exc}") from exc
+    models = extract_model_ids(payload)
+    return {
+        "models": models,
+        "count": len(models),
+        "base_url": base_url,
+        "checked_at": datetime.now().isoformat(timespec="seconds"),
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -527,6 +675,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _publisher_local_only(self) -> bool:
+        """发布能力涉及作家账号，只允许本机回环请求。"""
+        remote = str(self.client_address[0] if self.client_address else "")
+        if remote.startswith("::ffff:"):
+            remote = remote[7:]
+        allowed = remote in {"127.0.0.1", "::1", "localhost"}
+        if not allowed:
+            self._json({"error": "自动发布仅允许在运行服务的本机打开"}, 403)
+            return False
+        return True
+
     def do_GET(self):  # noqa: N802
         try:
             self._handle_get()
@@ -552,16 +711,32 @@ class Handler(BaseHTTPRequestHandler):
                 _state_full = json.loads((BASE_DIR / "state.json").read_text(encoding="utf-8"))
             except Exception:
                 _state_full = {}
+            try:
+                _vision_saved = json.loads(VISION_SUMMARIES_FILE.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                _vision_saved = {}
             devs = []
             for s in serials:
                 rt = get_runtime(s)
                 st = rt.get()
                 st["serial"] = s
                 st["device_online"] = device_online(s)
+                if not (st.get("vision") or {}).get("summaries"):
+                    _items = []
+                    for _key, _values in _vision_saved.items():
+                        if _key.startswith(str(s) + ":"):
+                            _items.extend(_values or [])
+                    if _items:
+                        st.setdefault("vision", {})["summaries"] = _items[-30:]
+                        if not st["vision"].get("summary"):
+                            st["vision"]["summary"] = _items[-1].get("summary", "")
+                        if st["vision"].get("status") == "disabled":
+                            st["vision"]["status"] = "done"
                 if not st["books"]:  # 任务尚未运行时, 用该设备配置的书单初始化展示
                     st["books"] = [
                         {"name": b.name, "enabled": b.enabled, "gift": b.gift, "gift_want": b.gift_count,
-                         "urge": b.urge, "review": b.review, "completed": b.completed, "update_time": b.update_time,
+                         "urge": b.urge, "review": b.review, "ai_summary": b.ai_summary,
+                         "completed": b.completed, "update_time": b.update_time,
                          "urged": False, "gifts": 0, "status": "待处理", "detail": "",
                          "reviewed": b.name in (_state_full.get(s, {}).get("reviewed") or {}),
                          "review_status": "已发" if b.name in (_state_full.get(s, {}).get("reviewed") or {}) else "待发"}
@@ -606,10 +781,45 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/config":
             try:
-                text = CONFIG_FILE.read_text(encoding="utf-8")
+                text = _redact_api_keys(CONFIG_FILE.read_text(encoding="utf-8"))
             except OSError:
                 text = ""
             self._json({"config": text})
+            return
+        if path in ("/api/vision-config", "/api/vision/config"):
+            self._json(_vision_config_view())
+            return
+        if path in ("/api/vision", "/api/vision/status"):
+            serial = (qs.get("serial") or [""])[0]
+            devices = []
+            for item in self._vision_status_devices(serial):
+                devices.append(item)
+            self._json({"devices": devices, "server_time": datetime.now().isoformat(timespec="seconds")})
+            return
+        if path == "/api/publisher/config":
+            if not self._publisher_local_only():
+                return
+            self._json(PUBLISHER.get_config())
+            return
+        if path == "/api/publisher/books":
+            if not self._publisher_local_only():
+                return
+            self._json({"books": PUBLISHER.list_books(), "config": PUBLISHER.get_config()})
+            return
+        if path == "/api/publisher/status":
+            if not self._publisher_local_only():
+                return
+            try:
+                after = int((qs.get("after") or ["0"])[0])
+            except ValueError:
+                after = 0
+            self._json(PUBLISHER.status(after=after))
+            return
+        if path in ("/api/vision-models", "/api/ai-models"):
+            try:
+                self._json(_fetch_vision_models())
+            except Exception as exc:
+                self._json({"error": str(exc)}, 400)
             return
         if path == "/api/health":
             self._json(_health_metrics())
@@ -622,7 +832,72 @@ class Handler(BaseHTTPRequestHandler):
                 star = 4
             self._json({"star": min(5, max(1, star))})
             return
+        # 静态媒体(视频背景等), 支持 Range 分段(浏览器 seek 用)
+        if path.startswith("/media/"):
+            rel = path[len("/media/"):]
+            allowed = (BASE_DIR / "media").resolve()
+            target = (allowed / rel).resolve()
+            if not str(target).startswith(str(allowed)) or not target.is_file():
+                self._json({"error": "not found"}, 404)
+                return
+            try:
+                data = target.read_bytes()
+            except OSError:
+                self._json({"error": "read error"}, 500)
+                return
+            ctype = "video/mp4" if target.suffix.lower() == ".mp4" else {
+                ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                ".webp": "image/webp", ".gif": "image/gif"}.get(target.suffix.lower(), "application/octet-stream")
+            total = len(data)
+            rng = self.headers.get("Range")
+            start, end = 0, total - 1
+            status = 200
+            if rng and rng.startswith("bytes="):
+                try:
+                    start = int(rng.split("=")[1].split("-")[0])
+                except Exception:
+                    start = 0
+                status = 206
+            chunk = data[start:end + 1]
+            self.send_response(status)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(chunk)))
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Cache-Control", "public, max-age=86400")
+            if status == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
+            self.end_headers()
+            self.wfile.write(chunk)
+            return
         self._json({"error": "not found"}, 404)
+
+    def _vision_status_devices(self, serial: str = "") -> list:
+        serials = [serial] if serial else get_managed_serials()
+        if not serials and get_config().device_serial:
+            serials = [get_config().device_serial]
+        try:
+            saved = json.loads(VISION_SUMMARIES_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            saved = {}
+        result = []
+        for current in serials:
+            state = get_runtime(current).get().get("vision") or {}
+            summaries = list(state.get("summaries") or [])
+            if not summaries:
+                # Include persisted summaries after a service restart, without
+                # making them part of the mutable RuntimeStatus object.
+                for key, values in saved.items():
+                    if key.startswith(str(current) + ":"):
+                        summaries.extend(values or [])
+            item = dict(state)
+            item["serial"] = current
+            item["summaries"] = summaries[-30:]
+            if item["summaries"] and not item.get("summary"):
+                latest = item["summaries"][-1]
+                item["summary"] = latest.get("summary", "") if isinstance(latest, dict) else ""
+                item["chapter"] = latest.get("chapter", "") if isinstance(latest, dict) else item.get("chapter", "")
+            result.append(item)
+        return result
 
     def do_POST(self):  # noqa: N802
         try:
@@ -636,6 +911,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_post(self) -> None:
         path = urlparse(self.path).path
+        if path.startswith("/api/publisher/") and not self._publisher_local_only():
+            return
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length) if length else b""
         if path == "/api/start":
@@ -690,11 +967,62 @@ class Handler(BaseHTTPRequestHandler):
                 parsed = yaml.safe_load(text)
                 if not isinstance(parsed, dict):
                     raise ValueError("配置必须是 YAML 映射")
+                try:
+                    original = CONFIG_FILE.read_text(encoding="utf-8")
+                    text = _restore_masked_api_keys(text, original)
+                except OSError:
+                    pass
                 CONFIG_FILE.write_text(text, encoding="utf-8")
                 reload_config()
                 self._json({"result": "已保存"})
             except Exception as exc:
                 self._json({"error": f"保存失败: {exc}"}, 400)
+            return
+        if path in ("/api/vision-config", "/api/vision/config"):
+            try:
+                data = json.loads(raw.decode("utf-8") or "{}")
+                self._json({"result": _save_vision_config(data), "config": _vision_config_view()})
+            except Exception as exc:
+                self._json({"error": f"视觉配置保存失败: {exc}"}, 400)
+            return
+        if path in ("/api/vision-models", "/api/ai-models"):
+            try:
+                data = json.loads(raw.decode("utf-8") or "{}")
+                self._json(_fetch_vision_models(data))
+            except Exception as exc:
+                self._json({"error": str(exc)}, 400)
+            return
+        if path == "/api/publisher/config":
+            try:
+                data = json.loads(raw.decode("utf-8") or "{}")
+                if not isinstance(data, dict):
+                    raise ValueError("配置必须是 JSON 对象")
+                self._json({"result": "已保存", "config": PUBLISHER.save_config(data)})
+            except Exception as exc:
+                self._json({"error": f"发布配置保存失败: {exc}"}, 400)
+            return
+        if path == "/api/publisher/login":
+            try:
+                task_id = PUBLISHER.start_login()
+                self._json({"task_id": task_id, "result": "已打开登录浏览器，请扫码进入作家后台"})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 409)
+            return
+        if path == "/api/publisher/start":
+            try:
+                data = json.loads(raw.decode("utf-8") or "{}")
+                if not isinstance(data, dict):
+                    raise ValueError("发布参数必须是 JSON 对象")
+                task_id = PUBLISHER.start_publish(data)
+                self._json({"task_id": task_id, "result": "发布任务已启动"})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 409)
+            return
+        if path == "/api/publisher/stop":
+            try:
+                self._json({"result": PUBLISHER.stop()})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 409)
             return
         if path == "/api/star":
             try:

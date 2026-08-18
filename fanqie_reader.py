@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import hashlib
+import io
 import json
 import logging
 import random
@@ -25,9 +26,12 @@ import sys
 import threading
 import time
 import urllib.request
+import os
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
+
+from vision_reader import VisionReadingSession, VisionSettings, extract_chapter_label, settings_from_config
 
 try:
     import uiautomator2 as u2
@@ -50,6 +54,7 @@ _STATE_LOCK = threading.Lock()  # state.json 读写锁(多设备并发)
 READER_ENTRY_TEXTS = ("继续阅读", "开始阅读", "下一章", "进入下一章")
 # 弹窗/广告上的关闭性文字(按顺序尝试)
 CLOSE_TEXTS = ("跳过", "关闭", "取消", "我知道了", "下次再说", "暂不开启", "暂不需要", "暂不加入", "下次再看", "稍后再说")
+UNSAVED_INPUT_PROMPT = "返回将不保存输入"
 # 带倒计时的关闭按钮兜底正则(如「跳过 5」「关闭广告」)
 CLOSE_PATTERNS = (r".*跳过.*", r".*关闭.*", r".*暂不.*", r".*稍后.*")
 URGE_TEXT = "催更"
@@ -91,6 +96,7 @@ class BookTask:
     gift_count: int = 3
     urge: bool = True       # 是否点催更(自己的书不能给自己催更, 网页端按设备勾选)
     review: bool = True     # 看完后自动发一条书评(读者自然语言)
+    ai_summary: bool = True  # 是否对这本书逐页提取正文并生成章节摘要
     completed: bool = False  # 已读完最后一章并跑完流程, 后续轮次直接跳过
     update_time: str = ""   # 作者更新时间(如 "18:00"); 设置后每天到「该时间+1分钟」才跑这本书(读完也重跑, 读新章节)
     add_shelf: bool = True  # 是否加入书架(默认加入; false 时跳过所有「加入书架」操作)
@@ -114,6 +120,19 @@ class Config:
     ai_api_key: str = ""      # API Key
     ai_model: str = "gpt-4o-mini"
     ai_timeout: int = 20      # AI 请求超时(秒)
+    # OpenAI 视觉逐页阅读/章节总结(默认关闭, 不影响既有文案 AI 流程)
+    ai_vision_enabled: bool = False
+    ai_vision_base_url: str = ""
+    ai_vision_api_key: str = ""
+    ai_vision_model: str = "gpt-4o-mini"
+    ai_vision_summary_model: str = ""
+    ai_vision_timeout: int = 30
+    ai_vision_detail: str = "high"
+    ai_vision_max_pages: int = 240
+    ai_vision_max_chars_per_page: int = 5000
+    ai_vision_summary_enabled: bool = True
+    ai_vision_summary_max_chars: int = 14000
+    ai_vision_concurrency: int = 2
 
 
 def load_books_from_json(path: Path = BOOKS_FILE) -> list:
@@ -134,6 +153,7 @@ def load_books_from_json(path: Path = BOOKS_FILE) -> list:
                 gift_count=int(b.get("gift_count", 3)),
                 urge=bool(b.get("urge", True)),
                 review=bool(b.get("review", True)),
+                ai_summary=bool(b.get("ai_summary", True)),
                 update_time=str(b.get("update_time", "")).strip(),
                 add_shelf=bool(b.get("add_shelf", True)),
             )
@@ -163,6 +183,7 @@ def _migrate_books_to_devices(serial: str) -> None:
             "gift_count": int(b.get("gift_count", 3)),
             "urge": bool(b.get("urge", True)),
             "review": bool(b.get("review", True)),
+            "ai_summary": bool(b.get("ai_summary", True)),
             "completed": False,
         })
     devs = {serial: {"enabled": True, "books": books}}
@@ -215,6 +236,7 @@ def load_books_for_serial(serial: str) -> list:
                 gift_count=int(b.get("gift_count", 3)),
                 urge=bool(b.get("urge", True)),
                 review=bool(b.get("review", True)),
+                ai_summary=bool(b.get("ai_summary", True)),
                 completed=bool(b.get("completed", False)),
                 update_time=str(b.get("update_time", "")).strip(),
                 add_shelf=bool(b.get("add_shelf", True)),
@@ -277,13 +299,14 @@ def load_config(path: Path, serial: str | None = None) -> Config:
                     gift_count=int(b.get("gift_count", 3)),
                     urge=bool(b.get("urge", True)),
                     review=bool(b.get("review", True)),
+                    ai_summary=bool(b.get("ai_summary", True)),
                     add_shelf=bool(b.get("add_shelf", True)),
                 )
             )
         if not books:  # 兼容旧配置: 单本书
             legacy = raw.get("book", {}) or {}
             if legacy.get("name"):
-                books.append(BookTask(name=str(legacy["name"]).strip(), gift=True, gift_count=3))
+                books.append(BookTask(name=str(legacy["name"]).strip(), gift=True, gift_count=3, ai_summary=True))
     timeout = task.get("timeout_minutes", 60)
     review = raw.get("review", {}) or {}
     try:
@@ -296,6 +319,11 @@ def load_config(path: Path, serial: str | None = None) -> Config:
         ai_timeout = max(5, int(ai.get("timeout", 20)))
     except (TypeError, ValueError):
         ai_timeout = 20
+    ai_key = str(ai.get("api_key", "") or "").strip()
+    if ai_key.startswith("${") and ai_key.endswith("}"):
+        ai_key = os.environ.get(ai_key[2:-1], "")
+    ai_key = ai_key or os.environ.get("OPENAI_API_KEY", "")
+    vision_settings = settings_from_config(ai, os.environ)
     return Config(
         device_serial=device_serial,
         scan_ips=[str(x).strip() for x in (device.get("scan_ips") or []) if str(x).strip()],
@@ -310,9 +338,21 @@ def load_config(path: Path, serial: str | None = None) -> Config:
         review_star=review_star,
         ai_enabled=bool(ai.get("enabled", True)),
         ai_base_url=str(ai.get("base_url", "") or "").strip().rstrip("/"),
-        ai_api_key=str(ai.get("api_key", "") or "").strip(),
+        ai_api_key=ai_key,
         ai_model=str(ai.get("model", "gpt-4o-mini") or "gpt-4o-mini"),
         ai_timeout=ai_timeout,
+        ai_vision_enabled=vision_settings.enabled,
+        ai_vision_base_url=vision_settings.base_url,
+        ai_vision_api_key=vision_settings.api_key,
+        ai_vision_model=vision_settings.model,
+        ai_vision_summary_model=vision_settings.summary_model,
+        ai_vision_timeout=vision_settings.timeout,
+        ai_vision_detail=vision_settings.detail,
+        ai_vision_max_pages=vision_settings.max_pages,
+        ai_vision_max_chars_per_page=vision_settings.max_chars_per_page,
+        ai_vision_summary_enabled=vision_settings.summary_enabled,
+        ai_vision_summary_max_chars=vision_settings.summary_max_chars,
+        ai_vision_concurrency=vision_settings.concurrency,
     )
 
 
@@ -331,11 +371,22 @@ class RuntimeStatus:
             "finished_at": None,
             "last_result": "",
             "books": [],  # [{"name","gift","urged","gifts","gift_want","status","detail"}]
+            "vision": {
+                "enabled": False, "status": "disabled", "book": "", "chapter": "",
+                "chapter_index": 0, "current_page": 0, "pages_submitted": 0,
+                "pages_extracted": 0, "pages_failed": 0, "summary": "", "summaries": [],
+                "error": "", "updated_at": None,
+            },
         }
 
     def update(self, **kw) -> None:
         with self._lock:
             self._data.update(kw)
+
+    def update_vision(self, **kw) -> None:
+        """Merge visual reader state without replacing unrelated task fields."""
+        with self._lock:
+            self._data.setdefault("vision", {}).update(kw)
 
     def set_book(self, idx: int, **kw) -> None:
         with self._lock:
@@ -347,7 +398,8 @@ class RuntimeStatus:
         with self._lock:
             self._data["books"] = [
                 {"name": b.name, "enabled": b.enabled, "gift": b.gift, "gift_want": b.gift_count,
-                 "urge": b.urge, "review": b.review, "completed": b.completed, "urged": False,
+                 "urge": b.urge, "review": b.review, "ai_summary": b.ai_summary,
+                 "completed": b.completed, "urged": False,
                  "gifts": 0, "status": "待处理", "detail": "",
                  "reviewed": False, "review_status": "待发"}
                 for b in books
@@ -467,9 +519,11 @@ class FanqieBot:
             selectors += [d(textContains=text), d(descriptionContains=text)]
         for sel in selectors:
             try:
-                if sel.click(timeout):
-                    self.log.info("点击「%s」", text)
-                    return True
+                # uiautomator2.UiObject.click() succeeds by returning None;
+                # only an exception means that the selector could not be clicked.
+                sel.click(timeout)
+                self.log.info("点击「%s」", text)
+                return True
             except Exception as exc:
                 self.log.debug("click_text(%r) 失败: %s", text, exc)
         return False
@@ -595,7 +649,53 @@ class FanqieBot:
             return ""
 
     # ---------- 弹窗 / 章末处理 ----------
+    def _confirm_discard_input(self, timeout: float = 0.5) -> bool:
+        """Confirm the app's unsaved-input dialog after leaving an editor."""
+        try:
+            if not self.d(textContains=UNSAVED_INPUT_PROMPT).exists(timeout):
+                return False
+            self.log.info("检测到未保存输入确认框, 点击「返回」放弃未发布内容")
+            if self.click_text("返回", max(0.8, timeout)):
+                self.sleep_human(0.8, 1.3)
+                return True
+        except Exception as exc:
+            self.log.debug("处理未保存输入确认框失败: %s", exc)
+        return False
+
+    def _leave_review_editor(self) -> bool:
+        """Leave the review editor and confirm discarding text when required."""
+        try:
+            # A first back press can only dismiss the keyboard.  Keep pressing
+            # until the editor Activity is actually gone, and never report a
+            # successful cleanup while the unsaved editor is still visible.
+            for attempt in range(3):
+                act = self._current_activity()
+                in_editor = any(name in act for name in (
+                    "AITextTemplateActivity", "UgcEditorActivity"
+                ))
+                if not in_editor:
+                    return attempt > 0
+                if attempt == 0:
+                    self._confirm_discard_input(0.3)
+                self.log.info("退出未完成的书评编辑页(%d/3)", attempt + 1)
+                self.d.press("back")
+                self.sleep_human(0.8, 1.3)
+                self._confirm_discard_input(1.2)
+                self.sleep_human(0.4, 0.8)
+            if any(name in self._current_activity() for name in (
+                    "AITextTemplateActivity", "UgcEditorActivity")):
+                self.log.warning("书评编辑页连续返回后仍未退出")
+                return False
+            return True
+        except Exception as exc:
+            self.log.debug("退出书评编辑页失败: %s", exc)
+            return False
+
     def handle_interruptions(self, quick: bool = False) -> bool:
+        # This dialog requires the affirmative right-hand button.  The generic
+        # close list contains "取消", which would keep the editor open forever.
+        if self._confirm_discard_input(0.15 if quick else 0.5):
+            return True
         if not self.cfg.auto_close_ads:
             return False
         timeout = 0.4 if quick else 0.8
@@ -804,35 +904,32 @@ class FanqieBot:
     def _watch_ad_gift(self) -> bool:
         """看广告送礼物(用户指定流程, 手动验证通过):
 
-        点「看广告支持作者」后进广告 -> 等广告播完(右上角倒计时结束显示「领取成功」,
-        实测约20秒) -> 点右上角 × 退出(实测位置约 (0.94, 0.107) = (677,137))
+        点「看广告支持作者」后进广告 -> 至少等待30秒让广告完整播放
+        -> 点右上角 × 退出(实测位置约 (0.94, 0.107) = (677,137))
         -> 出现「感谢你赠送的用爱发电」提示(礼物送出) -> 点「好的」-> 回礼物面板。
         返回是否成功送出(回到面板/送出提示)。
         """
         d = self.d
-        # 阶段1: 等广告播完(倒计时约20-50秒; dump 检测不到「领取成功」(自绘),
-        # 只能等足够长时间覆盖最长广告, 同时检测 activity 变化提前退出)
-        ad_done = False
-        for _try in range(10):
-            if d(text=GIFT_PANEL_MARKER).exists(1.0):
-                return True  # 广告瞬间结束已回面板
-            try:
-                act = self._current_activity()
-            except Exception:
-                act = ""
-            if not re.search(r"(webview|\.live\.|video|exciting)", act, re.I):
-                # 已离开广告页(可能自动关闭回到阅读器/面板)
-                ad_done = True
-                break
+        # 阶段1: 无条件等待至少30秒。广告关闭控件通常在倒计时结束前也能
+        # 被识别到，提前点击会触发挽留弹窗或导致赠送不到账。
+        self.log.info("看广告支持作者: 等待30秒后再关闭广告")
+        self.sleep_human(30.0, 32.0)
+        if d(text=GIFT_PANEL_MARKER).exists(1.0):
+            return True  # 广告已自动结束并回到礼物面板
+        try:
+            xml = d.dump_hierarchy()
+        except Exception:
             xml = ""
-            try:
-                xml = d.dump_hierarchy()
-            except Exception:
-                pass
-            if "感谢你赠送" in xml:
-                ad_done = True
-                break
-            self.sleep_human(6.0, 7.0)
+        if "感谢你赠送" in xml:
+            self.click_text("好的", 2.0)
+            self.sleep_human(1.5, 2.5)
+            return True
+        try:
+            act = self._current_activity()
+        except Exception:
+            act = ""
+        if not re.search(r"(webview|\.live\.|video|exciting)", act, re.I):
+            return True  # 广告已自动关闭到阅读器或礼物面板
         # 阶段2: 点右上角 × 关闭广告(实测不同广告 × 位置不同: 677,137 / 636,28 等),
         # 用右上角区域多点网格尝试, 每次点击后检查是否已回面板/离开广告页
         ad_close_points = [
@@ -1379,8 +1476,7 @@ class FanqieBot:
                             self.log.info("《%s》书评已发布(点评入口): %s", name, _text)
                             return "ok"
                     self.log.warning("书评: 点评输入后未找到发表按钮")
-                    self.d.press("back")
-                    self.sleep_human(1.0, 1.5)
+                    self._leave_review_editor()
                 elif self.click_text("下一步", 2.0):
                     self.log.info("书评: 点评弹窗点星后出现「下一步」, 进入文字编辑页")
                     self.sleep_human(2.0, 3.0)
@@ -1401,6 +1497,7 @@ class FanqieBot:
                                 self.log.info("《%s》书评已发布(点评-下一步入口): %s", name, _text)
                                 return "ok"
                         self.log.warning("书评: 点评编辑后未找到发表按钮")
+                        self._leave_review_editor()
                 # 点星后无文字输入能力: 关掉弹窗, 回退到书末卡片页入口
                 self.log.info("书评: 点评弹窗无文字输入能力, 点取消回退")
                 if self.click_text("取消", 2.0):
@@ -1508,12 +1605,14 @@ class FanqieBot:
                 self.sleep_human(1.0, 1.5)
             if not _got_ed:
                 self.log.warning("书评: 未找到评论输入框/发帖入口")
+                self._leave_review_editor()
                 return "fail"
             self.sleep_human(2.0, 3.0)
             self.handle_interruptions(quick=True)
             ed = self.d(className="android.widget.EditText")
             if not ed.exists(3.0):
                 self.log.warning("书评: 仍未找到评论输入框")
+                self._leave_review_editor()
                 return "fail"
         if _entry_kind == "discussion":
             _ai = self._ai_discussion_text(name)
@@ -1535,6 +1634,7 @@ class FanqieBot:
                 self.d.send_keys(text)
             except Exception as exc2:
                 self.log.warning("书评: 输入失败 %s / %s", exc, exc2)
+                self._leave_review_editor()
                 return "fail"
         self.log.info("书评: 已输入内容: %s", text)
         self.sleep_human(0.8, 1.5)
@@ -1565,6 +1665,7 @@ class FanqieBot:
         if not (self.click_text("发表", 3.0) or self.click_text("发布", 3.0)
                 or self.click_text("发布作品", 3.0)):
             self.log.warning("书评: 未找到「发表」按钮")
+            self._leave_review_editor()
             return "fail"
         self.sleep_human(2.0, 3.0)
         # 5) 发布成功页(实测「发布成功！讨论已发布到评论区」+ 好的/查看 按钮): 点「好的」关闭
@@ -1589,6 +1690,10 @@ class FanqieBot:
             except Exception:
                 texts = []
             self.log.info("恢复[%d/3]: activity=%s texts=%s", rnd + 1, act, texts)
+            if ("AITextTemplateActivity" in act or "UgcEditorActivity" in act
+                    or any(UNSAVED_INPUT_PROMPT in t for t in texts)):
+                self._leave_review_editor()
+                continue
             if "RewardActivity" in act:
                 # 礼物面板: 先按返回关闭(回阅读器); 关不掉才强杀重启
                 try:
@@ -1708,6 +1813,15 @@ class FanqieBot:
 
     # ---------- 单本书一轮 ----------
     def run_book(self, idx: int, bt: BookTask) -> str:
+        """Run one book and always release the optional vision worker pool."""
+        self._vision_session = None
+        try:
+            return self._run_book(idx, bt)
+        finally:
+            if self._vision_session:
+                self._vision_session.close()
+
+    def _run_book(self, idx: int, bt: BookTask) -> str:
         """处理一本书; 返回 done / skipped / failed。"""
         name = bt.name
         want_gifts = bt.gift_count if bt.gift else 0
@@ -1719,6 +1833,38 @@ class FanqieBot:
         self._reached_end = False
         self.rt.update(current_book=name, step="搜索进书", pages=0)
         self.rt.set_book(idx, status="搜索进书", urged=urged, gifts=gifts_sent)
+        vision = None
+        if self.cfg.ai_vision_enabled and bt.ai_summary:
+            vision = VisionReadingSession(
+                VisionSettings(
+                    enabled=self.cfg.ai_vision_enabled,
+                    base_url=self.cfg.ai_vision_base_url,
+                    api_key=self.cfg.ai_vision_api_key,
+                    model=self.cfg.ai_vision_model,
+                    summary_model=self.cfg.ai_vision_summary_model,
+                    timeout=self.cfg.ai_vision_timeout,
+                    detail=self.cfg.ai_vision_detail,
+                    max_pages=self.cfg.ai_vision_max_pages,
+                    max_chars_per_page=self.cfg.ai_vision_max_chars_per_page,
+                    summary_enabled=self.cfg.ai_vision_summary_enabled,
+                    summary_max_chars=self.cfg.ai_vision_summary_max_chars,
+                    concurrency=self.cfg.ai_vision_concurrency,
+                ),
+                self.rt,
+                book=name,
+                serial=self.cfg.device_serial,
+                logger=self.log,
+                persist_path=BASE_DIR / "vision_summaries.json",
+            )
+            self._vision_session = vision
+        else:
+            self.rt.update_vision(
+                enabled=False,
+                status="disabled",
+                book=name,
+                chapter="",
+                error="",
+            )
         self.log.info("===== 开始处理《%s》(送礼物=%s×%d) =====", name, bt.gift, bt.gift_count)
         # 搜索不到的书: 当天标记完成跳过, 次日自动再搜一次; 搜到了就正常跑
         if self._search_missed_today(name):
@@ -1799,6 +1945,8 @@ class FanqieBot:
             # 10/490、.108 444/583 都因此被误判完成), 只有 N==M 才触发完成流程。
             # 页码可能被展开的工具栏遮挡, 此时无页码不触发, 交由下方 turn_back 确认逻辑。
             if _end_has_discuss and _end_m and _end_m.group(1) == _end_m.group(2):
+                if vision:
+                    vision.flush_chapter(extract_chapter_label(" ".join(_end_texts), f"第{vision.chapter_index + 1}章"), final=True)
                 if _end_m:
                     self.log.info("识别到书末卡片页(全书最后一页 %s/%s + 本章讨论), 停止翻页",
                                   _end_m.group(1), _end_m.group(2))
@@ -1859,6 +2007,8 @@ class FanqieBot:
                 except Exception:
                     _um = None
                 if _um and _um.group(1) == _um.group(2):
+                    if vision:
+                        vision.flush_chapter(extract_chapter_label(" ".join(_utexts), f"第{vision.chapter_index + 1}章"), final=True)
                     self._reached_end = True  # 全书末页: 出现催更卡片 = 已读到最新章
                     if not urged:
                         if bt.urge:
@@ -1910,6 +2060,10 @@ class FanqieBot:
                         urged = True
                         self.rt.set_book(idx, urged=True)
                     self.sleep_human(1.0, 2.0)
+                if vision:
+                    # Intermediate chapter cards are boundaries too; flush the
+                    # pages collected before continuing to the next chapter.
+                    vision.flush_chapter(extract_chapter_label(" ".join(_utexts), f"第{vision.chapter_index + 1}章"))
                 # 不 return: 落入 fallback(有页码则跳过)后继续翻页
             # 书末 fallback: 新版客户端「催更」按钮可能识别不到(Compose渲染),
             # 且书末页的按钮(催更/发讨论/送礼物)在当前屏可能不显示;
@@ -2059,6 +2213,22 @@ class FanqieBot:
                 self.rt.set_book(idx, status="未完成", detail="书末流程未走完")
                 return "done"
             self.rt.update(step="阅读中")
+            if vision:
+                try:
+                    _img = self.d.screenshot()
+                    _buf = io.BytesIO()
+                    _img.save(_buf, format="PNG")
+                    _ui = " ".join(_end_texts)
+                    _page_no = int(_end_m.group(1)) if _end_m else None
+                    vision.submit_page(_buf.getvalue(), page_no=_page_no, ui_text=_ui)
+                except Exception as exc:
+                    self.log.debug("视觉阅读截图失败: %s", exc)
+                    # Some reader builds expose正文 through the UI tree even
+                    # when a screenshot call times out; use it as a best-effort
+                    # fallback so chapter summarisation can still complete.
+                    _fallback_text = " ".join(t for t in _end_texts if len(t.strip()) >= 2)
+                    if len(_fallback_text) >= 30 and "本章讨论" not in _fallback_text:
+                        vision.submit_page_content(_fallback_text, page_no=_page_no, ui_text=_ui)
             h0 = self._page_hash()
             self.turn_page()
             flips += 1

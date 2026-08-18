@@ -1,0 +1,25 @@
+#!/bin/sh
+
+set -eu
+
+staged_files=$(git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR)
+[ -n "$staged_files" ] || exit 0
+
+blocked_paths=$(printf '%s\n' "$staged_files" | grep -E '(^|/)(config\.yaml|devices\.json|devices\.json\.bak|state\.json|books\.json|last_run\.txt|vision_summaries\.json)$|(^|/)media/|\.(log|png|jpe?g|gif|webp|xml|mp4|webm|mov|mkv|avi|pem|key|p12|pfx)$' || true)
+blocked_env=$(printf '%s\n' "$staged_files" | grep -E '(^|/)\.env($|\.)' | grep -Ev '(^|/)\.env\.example$' || true)
+
+if [ -n "$blocked_paths$blocked_env" ]; then
+  echo "Commit blocked: sensitive or local-only files are staged." >&2
+  printf '%s\n%s\n' "$blocked_paths" "$blocked_env" | sed '/^$/d' | sort -u >&2
+  echo "Unstage them with: git restore --staged -- <file>" >&2
+  exit 1
+fi
+
+secret_files=$(git grep --cached -I -l -E '(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{12,}|github_pat_[A-Za-z0-9_]{12,}|-----BEGIN ([A-Z ]+ )?PRIVATE KEY-----)' -- . ':!*.example' 2>/dev/null || true)
+if [ -n "$secret_files" ]; then
+  echo "Commit blocked: a staged file contains a key/token-like value." >&2
+  printf '%s\n' "$secret_files" >&2
+  exit 1
+fi
+
+exit 0

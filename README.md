@@ -151,6 +151,55 @@ python tools/dump_ui.py
 | 催更不生效 | 用 `dump_ui.py` 进入书籍主页确认按钮文字；「已催更」后当天不会再点 |
 | 广告点不掉 | 用 `dump_ui.py` 看广告页关闭按钮文字，加入 `extra_close_texts` |
 
-## 10. 免责声明
+## 10. OpenAI 视觉逐页阅读与章节总结
+
+控制台的「AI 阅读」页可以在现有翻页任务运行时读取设备截图：每次翻页前投递一张正文截图，视觉模型提取正文；检测到「本章讨论」/章末卡片后，等待本章页面完成并生成一段摘要。摘要、识别计数、章节、错误和最近 30 条摘要会实时显示，也会写入 `vision_summaries.json` 供服务重启后查看。
+
+视觉阅读是独立能力，未配置或调用失败不会停止翻页、催更、礼物、书评等原有流程。建议用环境变量提供 Key：
+
+```powershell
+$env:OPENAI_API_KEY = "sk-..."
+python app.py
+```
+
+也可以在控制台「AI 阅读」页填写接口地址、模型、图像细节、并发和页数上限。页数上限按“每本书、每次任务运行”分别计数，不是所有书共享一个总数；达到上限后只停止该书的 AI 截图识别，原有自动翻页仍会继续。「书籍管理」中可以为每本书单独关闭“AI总结”；全局视觉阅读开启后，只有勾选该项的书才会上传截图并生成章节摘要。旧版书籍配置缺少该字段时默认开启。「检测模型」会调用当前接口的 `GET /models` 并生成模型下拉候选；API Key 输入框可临时切换显示/隐藏。配置会写入 `config.yaml` 的 `ai.vision` 节；服务端接口返回和高级配置中的 API Key 始终脱敏。默认使用 OpenAI-compatible 的 `https://api.openai.com/v1` 和 `gpt-4o-mini`，中转服务不支持 Responses API 时会自动回退到 `/chat/completions`。
+
+启动控制台并部署到局域网：
+
+```powershell
+python app.py
+# 浏览器访问 http://127.0.0.1:8899
+```
+
+服务监听 `0.0.0.0:8899`，可由现有 `run.bat`、任务计划程序或 Windows 服务托管。不要把 `config.yaml`、`vision_summaries.json` 或包含 Key 的日志复制到公共目录；反向代理部署时请限制控制台访问来源。
+
+离线协议测试：
+
+```powershell
+.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+相关接口：`GET /api/vision-config`（脱敏配置）、`POST /api/vision-config`（保存配置）、`POST /api/vision-models`（检测模型）、`GET /api/vision/status`（视觉状态与摘要），现有 `GET /api/status` 同时包含每台设备的 `vision` 字段。
+
+## 11. 网页自动发布作家后台章节
+
+控制台的「自动发布」页签融合了部署包中的 Playwright 发文能力，不再启动 PyWebView 桌面窗口。它支持：
+
+- 在本机 Edge 中扫码登录番茄作家后台，登录状态只保存在 `publisher_data/account_state.json`
+- 扫描 `publisher_data/chapters/<书名>/` 下的 TXT 章节，立即发布、定时发布和重新提交
+- 实时查看当前章节、进度、成功/失败/跳过数量和脱敏日志
+- 只有提交面板关闭并且平台章节管理列表能找到对应章节时，才把源稿移动到归档目录
+
+首次使用时打开 `http://127.0.0.1:8899`，进入「自动发布」，确认目录后点击「扫码登录」。如果需要改目录，直接在页签中修改并保存；待发目录和归档目录不能相同或互相包含。服务只允许回环地址调用自动发布接口，局域网其他设备仍可使用原有阅读控制，但不能触发作家账号发布。
+
+自动发布依赖 Playwright。项目虚拟环境安装 Python 包后，优先使用本机 Edge；如果机器没有可探测的 Edge/Chrome，再执行：
+
+```powershell
+.venv\Scripts\python.exe -m playwright install chromium
+```
+
+发布配置、登录态、原稿和归档目录均已加入 Git 忽略规则。不要手动把 `publisher_data`、`chapters`、`uploaded` 或 `state.json` 复制到公共仓库。
+
+## 12. 免责声明
 
 本项目仅供学习与个人阅读辅助，请勿用于刷量、刷收益等违反平台协议的行为；使用过程中产生的账号风险由使用者自行承担。

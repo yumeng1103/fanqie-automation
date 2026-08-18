@@ -5,6 +5,14 @@ devices.json.bak
 state.json
 books.json
 last_run.txt
+.env
+.env.*
+!.env.example
+vision_summaries.json
+*.pem
+*.key
+*.p12
+*.pfx
 
 # ===== 日志 =====
 *.log
@@ -20,9 +28,26 @@ __pycache__/
 *.png
 *.jpg
 *.jpeg
+*.gif
+*.webp
 *.xml
 .tmp-screens/
 .claude/
 debug.png
 ui_dump.xml
 dashboard.old.html
+
+# ===== 自动发布私有数据 / 原稿 =====
+publisher_data/
+chapters/
+uploaded/
+*_一键部署包.zip
+dist/
+
+# ===== 本地媒体素材 =====
+media/
+*.mp4
+*.webm
+*.mov
+*.mkv
+*.avi

@@ -13,7 +13,7 @@
      + 手账拼贴卡片 + 描边星星涂鸦 + 虚线路线 + 中英双语小标签 */
   :root {
     --sky1: #d9eefb; --sky2: #f6fbff;
-    --card: rgba(255,255,255,0.94); --card-warm: rgba(255,250,240,0.93); --paper: rgba(253,248,236,0.93);
+    --card: rgba(255,255,255,0.40); --card-warm: rgba(255,250,240,0.36); --paper: rgba(253,248,236,0.42);
     --ink: #16222f; --muted: #46596f; --faint: #6d88a6;
     --orange: #ff8a2a; --orange-deep: #f26a00;
     --yellow: #ffd93d; --cyan: #4fc3f7; --pink: #ff8fb1;
@@ -23,6 +23,32 @@
     --font-h: "Ma Shan Zheng", "KaiTi", "STKaiti", cursive;
     --font-e: "Caveat", "Comic Sans MS", cursive;
     --font-m: Consolas, "Courier New", monospace;
+  }
+  /* ============ 语义化设计令牌(统一命名, 便于三套主题维护) ============
+     这些令牌引用上面/各主题覆盖的具体色板, 组件统一用语义名 */
+  :root {
+    --surface: var(--card);
+    --surface-strong: var(--card-warm);
+    --surface-raised: var(--paper);
+    --text-1: var(--ink);
+    --text-2: var(--muted);
+    --text-3: var(--faint);
+    --accent: var(--orange);
+    --accent-strong: var(--orange-deep);
+    --good: var(--green);
+    --warn: var(--yellow);
+    --bad: var(--red);
+    --info: var(--cyan);
+    --border: var(--line);
+    --border-strong: var(--line2);
+    --ring: var(--cyan);
+    --r-sm: 10px; --r-md: 14px; --r-lg: 18px;
+    --blur-soft: 8px; --blur: 12px; --blur-strong: 18px;
+  }
+  /* 可访问性: 键盘焦点环(仅键盘激活, 不影响鼠标点击) */
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible,
+  textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--ring); outline-offset: 2px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: var(--sky2); color: var(--ink); }
@@ -43,6 +69,151 @@
 
   /* ===== 动态天空背景(夏日公路旅行) ===== */
   .sky { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+  /* 视频动态背景(迷迭香壁纸)。默认开启; body.video-off 时切回夏日静态装饰 */
+  .vbg { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; background: var(--sky2); }
+  .vbg video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(1.05); }
+  .vbg-shade { position: absolute; inset: 0; background: rgba(246,251,255,var(--vbg-shade,.28)); }
+  body.video-off .vbg { display: none; }
+  /* 视频背景开启时隐藏夏日装饰(云/太阳/角色/星星), 避免与视频画面混杂 */
+  body .sky, body .bg-char-left, body .bg-char-right, body .sparkles { display: none; }
+  body.video-off .sky, body.video-off .bg-char-left, body.video-off .bg-char-right, body.video-off .sparkles { display: revert; }
+  @media (prefers-reduced-motion: reduce) { body .vbg { display: none; } body .sky, body .bg-char-left, body .bg-char-right, body .sparkles { display: revert; } }
+
+  /* =====================================================================
+     视频背景模式 UI 适配: 迷迭香·冰蓝玻璃拟态
+     body 默认(视频模式) 或 body:not(.video-off) 时生效;
+     切回夏日(body.video-off) 时自动恢复夏日配色
+     ===================================================================== */
+  body:not(.video-off) {
+    --card: rgba(12,24,46,0.34);
+    --card-warm: rgba(16,30,56,0.35);
+    --paper: rgba(18,34,62,0.40);
+    --ink: #e8f1fb;
+    --muted: #aebfd6;
+    --faint: #7b8fae;
+    --orange: #8fd3ff;
+    --orange-deep: #4fb0f6;
+    --yellow: #bfe6ff;
+    --cyan: #8fe0ff;
+    --pink: #c8b3ff;
+    --green: #4deeb0;
+    --red: #ff8f9e;
+    --line: rgba(150,180,215,0.22);
+    --line2: rgba(170,198,235,0.34);
+    --shadow: 0 10px 34px rgba(4,10,26,0.5);
+    color: var(--ink);
+  }
+  body:not(.video-off) .vbg-shade { background: rgba(10,20,40,var(--vbg-shade,.18)); }
+  body:not(.video-off) header { background: rgba(10,20,40,0.5); border-bottom-color: var(--line2); }
+  body:not(.video-off) .pill { background: rgba(10,20,40,0.6); border-color: var(--line2); color: var(--muted); box-shadow: none; }
+  body:not(.video-off) .pill.running { color: var(--green); border-color: rgba(77,238,176,.5); background: rgba(9,30,22,0.55); }
+  body:not(.video-off) .pill.idle { color: var(--ink); }
+  body:not(.video-off) .pill.offline { color: var(--red); border-color: rgba(255,143,158,.5); background: rgba(42,12,16,0.55); }
+  body:not(.video-off) .pill.on { color: var(--cyan); border-color: rgba(143,224,255,.5); background: rgba(8,26,42,0.55); }
+  body:not(.video-off) button { background: rgba(16,30,56,0.72); color: var(--ink); border-color: var(--line2); box-shadow: 0 2px 10px rgba(4,10,26,.3); }
+  body:not(.video-off) button:hover { border-color: var(--cyan); }
+  body:not(.video-off) button.primary,
+  body:not(.video-off) .tab.active,
+  body:not(.video-off) .df-opt.active,
+  body:not(.video-off) .logo { background: linear-gradient(135deg, var(--orange), #4fb0f6); border-color: #3f9dee; color: #04101f; box-shadow: 0 4px 18px rgba(79,176,246,.4); }
+  body:not(.video-off) button.danger { background: linear-gradient(135deg, var(--red), #ff9cb0); border-color: #e84a58; color: #1a0408; }
+  body:not(.video-off) .tab { background: rgba(10,22,42,0.55); color: var(--ink); }
+  body:not(.video-off) .tab:hover { border-color: var(--orange); }
+  body:not(.video-off) input[type=text], body:not(.video-off) select, body:not(.video-off) input[type=number] { background: rgba(12,24,46,0.74); color: var(--ink); border-color: var(--line2); }
+  body:not(.video-off) .book-row { background: rgba(12,24,46,0.55); box-shadow: 0 2px 8px rgba(4,10,26,.25); }
+  body:not(.video-off) .shot-panel { background: rgba(12,24,46,0.6); }
+  body:not(.video-off) .shot-wrap { background: rgba(8,16,30,0.6); }
+  body:not(.video-off) .ab-funcs, body:not(.video-off) .ab-devs { background: rgba(12,24,46,0.5); border-color: var(--line2); }
+  body:not(.video-off) .ab-dev:hover { background: rgba(143,224,255,.1); }
+  body:not(.video-off) .book-table tbody tr:hover { background: rgba(143,224,255,.08); }
+  body:not(.video-off) .dev-line.mgd { background: rgba(9,30,22,0.5); border-color: rgba(77,238,176,.4); }
+  body:not(.video-off) .dev-line:hover { background: rgba(143,224,255,.1); }
+  body:not(.video-off) .b-on, body:not(.video-off) .b-done { background: rgba(9,30,22,0.55); color: var(--green); }
+  body:not(.video-off) .b-off { background: rgba(42,12,16,0.55); color: var(--red); }
+  body:not(.video-off) .b-bind { background: rgba(8,26,42,0.55); color: var(--cyan); }
+  body:not(.video-off) .b-gift { background: rgba(34,26,8,0.55); color: #ffd98a; }
+  body:not(.video-off) .b-nogift { background: rgba(14,26,44,0.55); color: var(--muted); }
+  body:not(.video-off) .df-menu { background: rgba(12,24,46,0.92); }
+  body:not(.video-off) .df-opt:hover { background: rgba(143,224,255,.12); color: var(--ink); }
+  body:not(.video-off) .saved-box { background: rgba(22,34,58,0.6); border-color: rgba(220,180,100,.35); }
+  body:not(.video-off) .saved-box .sb-label { color: #e6c76a; }
+  body:not(.video-off) .saved-item { border-bottom-color: rgba(220,180,100,.22); }
+  body:not(.video-off) .modal-box { border-color: rgba(150,180,215,.55); }
+  body:not(.video-off) .modal-close, body:not(.video-off) .card-fold, body:not(.video-off) .df-btn { background: rgba(14,26,46,0.85); color: var(--muted); }
+  body:not(.video-off) .h-bar { background: rgba(150,180,215,0.18); border-color: var(--line2); }
+  body:not(.video-off) #log, body:not(.video-off) #cfg { color: #c4d7ea; }
+  body:not(.video-off) .dev-line code, body:not(.video-off) .dev-head code, body:not(.video-off) .sum-row code { color: #9ed0ff; }
+  body:not(.video-off) .col *:not(button):not(input):not(textarea):not(select) { text-shadow: 0 1px 2px rgba(4,10,26,.85), 0 0 8px rgba(4,10,26,.45); }
+  body:not(.video-off) ::-webkit-scrollbar-thumb { background: rgba(170,198,235,.35); }
+
+  /* =====================================================================
+     夏日/静态模式: 卡片统一玻璃拟态(半透明毛玻璃, 与视频模式同一设计语言)
+     body.video-off 即夏日静态背景时生效
+     ===================================================================== */
+  body.video-off header { background: rgba(246,251,255,0.68); }
+  body.video-off .tab { background: rgba(255,255,255,0.62); }
+  body.video-off .pill { background: rgba(255,255,255,0.55); }
+  body.video-off .pill.running { background: rgba(240,255,245,0.6); }
+  body.video-off .pill.offline { background: rgba(255,240,241,0.6); }
+  body.video-off .pill.on { background: rgba(240,250,255,0.6); }
+  body.video-off button { background: rgba(255,255,255,0.85); }
+  body.video-off button.primary { background: linear-gradient(135deg, var(--orange), #ffb25e); border-color: var(--orange-deep); color: #fff; box-shadow: 0 4px 14px rgba(242,106,0,0.28); }
+  body.video-off button.danger { background: linear-gradient(135deg, var(--red), #ff8a94); border-color: #e84a58; color: #fff; box-shadow: 0 4px 14px rgba(255,95,109,0.25); }
+  body.video-off input[type=text], body.video-off select, body.video-off input[type=number] { background: rgba(255,255,255,0.62); }
+  body.video-off .shot-panel { background: rgba(255,255,255,0.62); }
+  body.video-off .shot-wrap { background: rgba(238,244,249,0.55); }
+  body.video-off .book-row { background: rgba(255,255,255,0.62); }
+  body.video-off .ab-funcs, body.video-off .ab-devs { background: rgba(255,255,255,0.55); }
+  body.video-off .book-table tbody tr:hover { background: rgba(79,195,247,0.1); }
+  body.video-off .dev-line.mgd { background: rgba(240,255,245,0.55); }
+  body.video-off .df-menu { background: rgba(255,255,255,0.78); }
+  body.video-off .saved-box { background: rgba(255,254,245,0.6); }
+  body.video-off .b-on, body.video-off .b-done { background: rgba(240,255,245,0.6); }
+  body.video-off .b-off { background: rgba(255,240,241,0.6); }
+  body.video-off .b-bind { background: rgba(240,250,255,0.6); }
+  body.video-off .b-gift { background: rgba(255,247,230,0.6); }
+  body.video-off .b-nogift { background: rgba(244,248,252,0.6); }
+  body.video-off .modal-close, body.video-off .card-fold, body.video-off .df-btn { background: rgba(255,255,255,0.72); }
+  body.video-off .h-bar { background: rgba(207,224,238,0.4); }
+
+  /* =====================================================================
+     时序花园·静态背景 UI
+     静态模式(video-off)背景换成 garden.jpg, 并适配花园暖阳光色调的玻璃拟态
+     ===================================================================== */
+  body.video-off {
+    background: #f4ead6 url('/media/garden.jpg') center/cover no-repeat fixed;
+    --card: rgba(255,251,244,0.38);
+    --card-warm: rgba(255,248,238,0.36);
+    --paper: rgba(255,250,242,0.42);
+    --ink: #27331f;             /* 深墨绿 */
+    --muted: #576c4e;           /* 柔绿灰 */
+    --faint: #7d8f6d;           /* 淡绿灰 */
+    --orange: #f0801a;          /* 暖阳橙 */
+    --orange-deep: #e26a0a;
+    --yellow: #ffcf3d;
+    --cyan: #3fa9c9;            /* 花园水色 */
+    --pink: #e79aa6;
+    --green: #5cb85c;
+    --red: #ef5f6b;
+    --line: rgba(92,112,72,0.16);
+    --line2: rgba(120,138,96,0.30);
+    --shadow: 0 8px 28px rgba(74,86,52,0.18);
+  }
+  /* 花园背景上隐藏原夏日天空元素(太阳/云/浮动物/角色浮层), 让 garden.jpg 纯净做底 */
+  body.video-off .sky .sun,
+  body.video-off .sky .cloud,
+  body.video-off .sky .floaties,
+  body.video-off .bg-char-left,
+  body.video-off .bg-char-right { display: none; }
+  /* 花园暖调玻璃面板(覆盖上方白色玻璃为奶油暖调) */
+  body.video-off header { background: rgba(255,249,240,0.62); }
+  body.video-off .tab { background: rgba(255,251,244,0.66); }
+  body.video-off .pill { background: rgba(255,252,246,0.6); }
+  body.video-off button { background: rgba(255,252,246,0.9); }
+  body.video-off input[type=text], body.video-off select, body.video-off input[type=number] { background: rgba(255,252,246,0.7); }
+  body.video-off .book-row, body.video-off .shot-panel { background: rgba(255,251,244,0.62); }
+  body.video-off .saved-box { background: rgba(255,248,236,0.62); }
+  body.video-off .b-gift { background: rgba(255,244,214,0.6); }
 
   /* 太阳(脉动) */
   .sun {
@@ -287,9 +458,10 @@
   /* ===== 卡片(手账拼贴) ===== */
   .card {
     background: var(--card); border: 1px solid var(--line);
+    border-top: 1px solid rgba(255,255,255,0.65);
     border-radius: 16px; padding: 18px; margin-bottom: 16px;
     box-shadow: var(--shadow); position: relative;
-    -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px);
+    -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
     --tilt: -0.35deg; transform: rotate(var(--tilt));
   }
   .card:nth-of-type(odd) { --tilt: 0.3deg; }
@@ -353,7 +525,8 @@
     font-family: var(--font-m); font-size: 12.5px; line-height: 24px; resize: vertical;
     -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
   }
-  #cfg:focus, input:focus, select:focus { outline: none; border-color: var(--orange); }
+  #cfg:focus, input:focus, select:focus { border-color: var(--orange); }
+  input:focus:not(:focus-visible), select:focus:not(:focus-visible), textarea:focus:not(:focus-visible) { outline: none; }
   .msg { margin-left: 10px; font-size: 12.5px; color: var(--muted); }
   .ok { color: var(--green); } .err { color: var(--red); }
   details summary {
@@ -454,6 +627,35 @@
     color: var(--faint); font-size: 12.5px;
   }
 
+  /* ===== OpenAI 视觉阅读 ===== */
+  .vision-layout { display: grid; grid-template-columns: minmax(260px, 360px) 1fr; gap: 18px; align-items: start; }
+  .vision-config, .vision-live { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--surface); }
+  .vision-config-head, .vision-live-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .vision-field { display: flex; align-items: center; gap: 10px; margin: 9px 0; color: var(--muted); font-size: 12px; }
+  .vision-field > span:first-child { flex: 0 0 86px; }
+  .vision-field input[type=text], .vision-field input[type=password], .vision-field input[type=number], .vision-field select { flex: 1; min-width: 0; width: auto; }
+  .vision-input-action { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+  .vision-input-action input { flex: 1; min-width: 0; width: 0; }
+  .vision-input-action .btn-mini { padding: 7px 10px; }
+  .vision-input-action .icon-btn { width: 32px; height: 34px; padding: 0; border-radius: 8px; font-size: 14px; flex: 0 0 32px; }
+  .vision-fields-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .vision-fields-2 .vision-field { display: block; margin: 7px 0; }
+  .vision-fields-2 .vision-field > span:first-child { display: block; margin-bottom: 5px; }
+  .vision-fields-2 input, .vision-fields-2 select { width: 100%; }
+  .vision-note { margin-top: 12px; color: var(--faint); font-size: 11px; line-height: 1.6; }
+  .vision-device { border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; margin: 8px 0; background: var(--surface-raised); }
+  .vision-device-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .vision-device-head code { font-family: var(--font-m); font-size: 12px; }
+  .vision-status { color: var(--muted); font-size: 12px; margin: 8px 0; }
+  .vision-status.error { color: var(--bad); }
+  .vision-bar { height: 7px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 7px 0 9px; }
+  .vision-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--info), var(--accent)); transition: width .3s; }
+  .vision-stats { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
+  .vision-summary { border-top: 1px dashed var(--line2); margin-top: 10px; padding-top: 9px; line-height: 1.65; font-size: 13px; }
+  .vision-summary small { display: block; color: var(--faint); margin-bottom: 3px; }
+  @media (max-width: 900px) { .vision-layout { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) { .vision-fields-2 { grid-template-columns: 1fr; gap: 0; } }
+
   /* ===== 书籍管理(手账便签切换器) ===== */
   .dev-filter { position: relative; display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
   .df-btn {
@@ -511,6 +713,63 @@
   .book-row .rm:hover { background: #fff0f1; transform: none; }
   .book-row input[type=number] { width: 54px; }
 
+  /* ===== 自动发布 ===== */
+  .pub-layout {
+    display: grid; grid-template-columns: minmax(360px, .9fr) minmax(420px, 1.1fr);
+    border: 1px solid rgba(118,153,185,.3); border-radius: 8px; overflow: hidden;
+    background: rgba(255,255,255,.72);
+  }
+  .pub-controls, .pub-live { min-width: 0; padding: 18px; }
+  .pub-live { border-left: 1px solid rgba(118,153,185,.3); background: rgba(245,249,252,.72); }
+  .pub-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  .pub-head b { font-size: 14px; color: var(--ink); letter-spacing: 0; }
+  .pub-account-actions, .pub-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .pub-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 11px 12px; }
+  .pub-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .pub-field.full { grid-column: 1 / -1; }
+  .pub-field > span { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: 0; }
+  .pub-field input, .pub-field select {
+    width: 100%; min-width: 0; height: 38px; box-sizing: border-box; border-radius: 7px;
+    border: 1px solid rgba(101,137,170,.38); background: rgba(255,255,255,.94);
+    color: var(--ink); padding: 0 10px; font: inherit; font-size: 13px; letter-spacing: 0;
+  }
+  .pub-field input:focus, .pub-field select:focus { outline: 2px solid rgba(255,141,74,.22); border-color: var(--orange); }
+  .pub-section { border-top: 1px solid rgba(118,153,185,.24); margin-top: 15px; padding-top: 15px; }
+  .pub-segments { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 8px; background: #edf3f7; }
+  .pub-segments label { position: relative; min-width: 0; }
+  .pub-segments input { position: absolute; opacity: 0; pointer-events: none; }
+  .pub-segments span {
+    display: flex; align-items: center; justify-content: center; min-height: 34px; padding: 0 6px;
+    border-radius: 6px; color: #5c7182; font-size: 12px; font-weight: 700; cursor: pointer;
+    white-space: normal; text-align: center; letter-spacing: 0;
+  }
+  .pub-segments input:checked + span { background: #fff; color: #c44d2f; box-shadow: 0 1px 5px rgba(49,77,99,.16); }
+  .pub-inline-switch { min-height: 38px; display: flex; align-items: center; gap: 8px; }
+  .pub-actions { margin-top: 14px; }
+  .pub-actions button { min-width: 112px; }
+  .pub-progress { height: 10px; border-radius: 5px; background: #dfe9ef; overflow: hidden; margin: 12px 0; }
+  .pub-progress i { display: block; width: 0; height: 100%; background: linear-gradient(90deg, #ff8b4a, #35a979); transition: width .35s ease; }
+  .pub-progress i.waiting { width: 18%; animation: pub-pulse 1.4s ease-in-out infinite alternate; }
+  @keyframes pub-pulse { from { opacity: .45; transform: translateX(-35%); } to { opacity: 1; transform: translateX(420%); } }
+  .pub-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-bottom: 12px; }
+  .pub-stat { padding: 9px 7px; border: 1px solid rgba(118,153,185,.28); border-radius: 7px; background: rgba(255,255,255,.86); text-align: center; }
+  .pub-stat b { display: block; color: var(--ink); font-size: 18px; line-height: 1.1; letter-spacing: 0; }
+  .pub-stat span { color: var(--muted); font-size: 10px; letter-spacing: 0; }
+  .pub-current { min-height: 36px; padding: 8px 10px; border-left: 3px solid var(--orange); background: rgba(255,248,240,.86); color: var(--ink); font-size: 12px; }
+  .pub-error { display: none; margin-top: 9px; padding: 8px 10px; border-radius: 6px; background: #fff0f1; color: #b52f3a; font-size: 12px; }
+  .pub-log {
+    height: 270px; overflow: auto; margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+    background: #18232b; color: #d8e3e8; font: 12px/1.6 Consolas, "Microsoft YaHei", monospace;
+  }
+  .pub-log-line { display: grid; grid-template-columns: 58px 50px minmax(0,1fr); gap: 7px; overflow-wrap: anywhere; letter-spacing: 0; }
+  .pub-log-line .t { color: #8197a3; }
+  .pub-log-line .lv { color: #74bce5; }
+  .pub-log-line.success .lv { color: #6ed0a0; }
+  .pub-log-line.warning .lv { color: #f2bc63; }
+  .pub-log-line.error .lv { color: #ff7d87; }
+  .pub-blocked { display: none; margin-bottom: 12px; padding: 10px 12px; border-radius: 7px; background: #fff0f1; color: #b52f3a; font-size: 12px; }
+  .pub-hidden { display: none !important; }
+
   .empty-hint { color: var(--faint); font-size: 12.5px; padding: 10px 4px; }
 
   /* ===== 连接横幅 ===== */
@@ -522,9 +781,48 @@
   #connBanner b { color: #8f1f2a; }
 
   .spacer { flex: 1; }
+
+  /* ===== 响应式优化(移动优先窄屏) ===== */
+  @media (max-width: 900px) {
+    .h-right #btnStart { font-size: 12px; padding: 7px 13px; }
+    .h-right #btnStop { font-size: 12px; padding: 7px 13px; }
+    .pub-layout { grid-template-columns: 1fr; }
+    .pub-live { border-left: 0; border-top: 1px solid rgba(118,153,185,.3); }
+  }
+  @media (max-width: 760px) {
+    main { padding: 14px 12px; }
+    .tabs { padding: 12px 10px 0; gap: 8px; }
+    .tab { font-size: 15px; padding: 6px 11px; }
+    header { padding: 11px 12px; gap: 10px; }
+    .brand h1 { font-size: 21px; }
+    .brand .tagline { font-size: 13px; }
+    .logo { width: 38px; height: 38px; font-size: 22px; border-radius: 11px; }
+    .h-right { gap: 6px; }
+    .pill { padding: 4px 10px; font-size: 11px; }
+    .card { padding: 14px; border-radius: 14px; }
+    .card h2 { font-size: 18px; }
+    .modal-box { max-width: 94vw; }
+    .book-toolbar { justify-content: flex-start; }
+    .pub-fields { grid-template-columns: 1fr; }
+    .pub-field.full { grid-column: auto; }
+    .pub-stats { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 560px) {
+    .brand .tagline { display: none; }
+    .h-right #dev, .h-right #ver { display: none; }
+    #btnStart { max-width: 118px; white-space: normal; font-size: 11px; }
+    .tab { font-size: 14px; padding: 6px 9px; }
+    .dev-block { padding: 12px; }
+    .book-row { padding: 8px 8px; }
+  }
 </style>
 </head>
 <body>
+<!-- 视频动态背景(迷迭香壁纸), 默认开启, 可在 header 切换为夏日静态背景 -->
+<div class="vbg" id="vbg" aria-hidden="true">
+  <video id="bgVideo" autoplay muted loop playsinline preload="auto" src="/media/bg.mp4"></video>
+  <div class="vbg-shade"></div>
+</div>
 <!-- 动态天空背景(夏日公路旅行) -->
 <div class="sky" aria-hidden="true">
   <div class="sun"></div>
@@ -570,19 +868,22 @@
     <span id="pill" class="pill idle">连接中…</span>
     <span id="dev" class="pill idle">设备: -</span>
     <span id="clock" class="pill idle"></span>
-    <span id="ver" class="pill idle" title="页面版本">v8</span>
+    <span id="ver" class="pill idle" title="页面版本">v9</span>
+    <button id="btnVbg" class="pill idle" style="cursor:pointer" onclick="toggleVbg()" title="切换背景: 迷迭香视频 / 夏日静态">🎬 视频背景</button>
     <span class="spacer"></span>
     <button id="btnStart" class="primary" onclick="act('start')">▶ 启动任务(全部设备)</button>
     <button id="btnStop" class="danger" onclick="act('stop')" disabled>■ 停止</button>
   </div>
 </header>
 
-<nav class="tabs">
-  <button class="tab active" data-tab="overview" onclick="switchTab('overview')">🏠 总览</button>
-  <button class="tab" data-tab="shots" onclick="switchTab('shots')">🖥 设备画面</button>
-  <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">📋 任务状态</button>
-  <button class="tab" data-tab="books" onclick="switchTab('books')">📚 书籍管理</button>
-  <button class="tab" data-tab="log" onclick="switchTab('log')">⚙️ 日志设置</button>
+<nav class="tabs" role="tablist" aria-label="控制台页面">
+  <button class="tab active" role="tab" aria-selected="true" data-tab="overview" onclick="switchTab('overview')">🏠 总览</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="shots" onclick="switchTab('shots')">🖥 设备画面</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="tasks" onclick="switchTab('tasks')">📋 任务状态</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="vision" onclick="switchTab('vision')">🤖 AI 阅读</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="publisher" onclick="switchTab('publisher')">🚀 自动发布</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="books" onclick="switchTab('books')">📚 书籍管理</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="log" onclick="switchTab('log')">⚙️ 日志设置</button>
 </nav>
 
 <main>
@@ -635,6 +936,100 @@
     <div class="card">
       <h2><span class="mk">📋</span>任务状态 <span class="en">// Tasks</span> <span class="hint">每台设备独立</span></h2>
       <div id="stDevices"></div>
+    </div>
+  </section>
+
+  <!-- ========== OpenAI 视觉阅读 ========== -->
+  <section class="tab-page" id="pg-vision" hidden>
+    <div class="card">
+      <h2><span class="mk">🤖</span>AI 视觉阅读 <span class="en">// Vision Reader</span> <span class="hint">逐页识别，章末自动总结</span></h2>
+      <div class="vision-layout">
+        <div class="vision-config">
+          <div class="vision-config-head"><b>OpenAI 兼容接口</b><span id="visionKeyState" class="badge b-nogift">未配置 Key</span></div>
+          <label class="vision-field"><span>启用视觉阅读</span><label class="switch"><input type="checkbox" id="visionEnabled"><span class="slider"></span></label></label>
+          <label class="vision-field"><span>接口地址</span><input id="visionBaseUrl" type="text" placeholder="https://api.openai.com/v1"></label>
+          <label class="vision-field"><span>API Key</span><div class="vision-input-action"><input id="visionApiKey" type="password" placeholder="留空保持现有 Key"><button type="button" class="icon-btn" id="visionKeyToggle" onclick="toggleVisionKey()" title="显示 API Key" aria-label="显示 API Key">◉</button></div></label>
+          <label class="vision-field"><span>模型</span><div class="vision-input-action"><select id="visionModel" title="选择检测到的模型"><option value="gpt-4o-mini">gpt-4o-mini</option></select><button type="button" class="btn-mini" id="visionModelDetect" onclick="detectVisionModels()" title="从当前接口读取模型列表">检测模型</button></div></label>
+          <div id="visionModelsMsg" class="msg" style="display:block;margin:4px 0 0 96px"></div>
+          <div class="vision-fields-2">
+            <label class="vision-field"><span>图像细节</span><select id="visionDetail"><option value="high">high</option><option value="low">low</option><option value="auto">auto</option></select></label>
+            <label class="vision-field"><span>并发请求</span><input id="visionConcurrency" type="number" min="1" max="4" value="2"></label>
+          </div>
+          <div class="vision-fields-2">
+            <label class="vision-field"><span title="每本书、每次任务运行分别计数">每本书每轮最大 AI 页数</span><input id="visionMaxPages" type="number" min="1" max="1000" value="240"></label>
+            <label class="vision-field"><span>超时(秒)</span><input id="visionTimeout" type="number" min="5" max="180" value="30"></label>
+          </div>
+          <label class="vision-field"><span>章末生成摘要</span><label class="switch"><input type="checkbox" id="visionSummaryEnabled" checked><span class="slider"></span></label></label>
+          <button class="primary btn-mini" onclick="saveVisionConfig()">💾 保存 AI 配置</button><span id="visionCfgMsg" class="msg"></span>
+          <div class="vision-note">截图只在任务运行、设备在线且已配置 Key 时上传；未配置或调用失败不会影响翻页、催更和礼物流程。</div>
+        </div>
+        <div class="vision-live">
+          <div class="vision-live-head"><b>实时阅读进度</b><span class="hint">每 2 秒更新</span></div>
+          <div id="visionDevices"><div class="empty-hint">暂无运行中的视觉阅读任务</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 番茄作家自动发布 ========== -->
+  <section class="tab-page" id="pg-publisher" hidden>
+    <div class="card">
+      <h2><span class="mk">🚀</span>自动发布 <span class="en">// Author Publisher</span> <span class="hint">本机作家后台</span></h2>
+      <div id="pubBlocked" class="pub-blocked"></div>
+      <div class="pub-layout" id="pubLayout">
+        <div class="pub-controls">
+          <div class="pub-head">
+            <b>账号与稿件</b>
+            <span id="pubLoginState" class="badge b-nogift">未登录</span>
+          </div>
+          <div class="pub-fields">
+            <label class="pub-field full"><span>待发章节目录</span><input id="pubSourceDir" type="text" autocomplete="off" spellcheck="false"></label>
+            <label class="pub-field full"><span>发布归档目录</span><input id="pubArchiveDir" type="text" autocomplete="off" spellcheck="false"></label>
+            <label class="pub-field"><span>自动化窗口</span><span class="pub-inline-switch"><label class="switch"><input id="pubVisibleBrowser" type="checkbox" checked><span class="slider"></span></label><span>显示 Edge</span></span></label>
+            <div class="pub-field"><span>账号操作</span><div class="pub-account-actions"><button type="button" class="btn-mini" id="pubSaveConfig" onclick="savePublisherConfig()">💾 保存</button><button type="button" class="btn-mini" id="pubLogin" onclick="publisherLogin()">扫码登录</button></div></div>
+          </div>
+
+          <div class="pub-section">
+            <div class="pub-segments" role="radiogroup" aria-label="发布模式">
+              <label><input type="radio" name="pubMode" value="immediate" checked onchange="publisherModeChanged()"><span>立即发布</span></label>
+              <label><input type="radio" name="pubMode" value="scheduled" onchange="publisherModeChanged()"><span>定时发布</span></label>
+              <label><input type="radio" name="pubMode" value="republish" onchange="publisherModeChanged()"><span>重新提交</span></label>
+            </div>
+          </div>
+
+          <div class="pub-fields" style="margin-top:12px">
+            <label class="pub-field full"><span>待处理小说</span><select id="pubBook" onchange="publisherBookChanged()"><option value="">正在扫描…</option></select></label>
+            <label class="pub-field"><span>本轮章节数（0 = 全部）</span><input id="pubCount" type="number" min="0" max="1000" value="0"></label>
+            <label class="pub-field pub-new-only"><span>目标分卷</span><input id="pubVolume" type="number" min="1" max="100" value="1"></label>
+            <label class="pub-field pub-scheduled-only pub-hidden"><span>首章发布日期</span><input id="pubStartDate" type="date"></label>
+            <label class="pub-field pub-scheduled-only pub-hidden"><span>发布时间</span><input id="pubPublishTime" type="time" value="00:01"></label>
+            <label class="pub-field pub-scheduled-only pub-hidden"><span>每天发布章数</span><input id="pubPerDay" type="number" min="1" max="20" value="2"></label>
+            <label class="pub-field pub-republish-only pub-hidden"><span>章节范围</span><input id="pubChapterSpec" type="text" value="all" placeholder="all / 1-9 / 1,3,5"></label>
+            <label class="pub-field"><span>使用 AI 声明</span><span class="pub-inline-switch"><label class="switch"><input id="pubAiDeclare" type="checkbox"><span class="slider"></span></label><span>是</span></span></label>
+          </div>
+          <div id="pubBookInfo" class="empty-hint">尚未扫描到稿件</div>
+          <div class="pub-actions">
+            <button type="button" class="btn-mini" id="pubRefreshBooks" onclick="refreshPublisherBooks()">↻ 刷新书库</button>
+            <button type="button" class="primary btn-mini" id="pubStart" onclick="startPublisher()">▶ 开始发布</button>
+            <button type="button" class="danger btn-mini" id="pubStop" onclick="stopPublisher()" disabled>■ 停止</button>
+            <span id="pubMsg" class="msg"></span>
+          </div>
+        </div>
+
+        <div class="pub-live">
+          <div class="pub-head"><b>实时进度</b><span id="pubState" class="pill idle">等待操作</span></div>
+          <div id="pubCurrent" class="pub-current">尚未启动发布任务</div>
+          <div class="pub-progress"><i id="pubProgressBar"></i></div>
+          <div class="pub-stats">
+            <div class="pub-stat"><b id="pubProgressText">0/0</b><span>进度</span></div>
+            <div class="pub-stat"><b id="pubSuccess">0</b><span>成功</span></div>
+            <div class="pub-stat"><b id="pubFailed">0</b><span>失败</span></div>
+            <div class="pub-stat"><b id="pubSkipped">0</b><span>跳过</span></div>
+          </div>
+          <div id="pubError" class="pub-error"></div>
+          <div id="pubLog" class="pub-log" aria-live="polite"><div class="pub-log-line"><span class="t">--:--:--</span><span class="lv">状态</span><span>等待发布任务</span></div></div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -722,6 +1117,9 @@
           <label class="switch" title="看完后自动发一条书评(读者自然语言), 取消勾选=不发书评">
             <input type="checkbox" id="abReview" checked><span class="slider"></span>
           </label><span class="row-label">书评</span>
+          <label class="switch" title="是否对这本书逐页识别正文并生成章节摘要, 取消勾选=不进行 AI 总结">
+            <input type="checkbox" id="abAiSummary" checked><span class="slider"></span>
+          </label><span class="row-label">AI总结</span>
           <label class="switch" title="读这本书时加入书架, 取消勾选=不加入书架">
             <input type="checkbox" id="abAddShelf" checked><span class="slider"></span>
           </label><span class="row-label">加书架</span>
@@ -753,6 +1151,20 @@ if (location.protocol === 'file:') {
     '<a href="http://127.0.0.1:8899" style="color:#8f1f2a">http://127.0.0.1:8899</a></div>');
 }
 let statusDevs = [];   // [{serial, running, step, current_book, pages, device_online, books:[]}]
+/* ---------- 视频背景开关(迷迭香壁纸 / 夏日静态) ---------- */
+function toggleVbg() {
+  const off = document.body.classList.toggle('video-off');
+  localStorage.setItem('vbg', off ? 'off' : 'on');
+  const b = document.getElementById('btnVbg');
+  if (b) { b.textContent = off ? '🌤 夏日模式' : '🎬 视频模式'; b.title = off ? '切换: 迷迭香视频 UI / 夏日 UI(当前夏日)' : '切换: 迷迭香视频 UI / 夏日 UI(当前视频)'; }
+  try { const v = document.getElementById('bgVideo'); if (v) { off ? v.pause() : v.play().catch(()=>{}); } } catch (e) { /* 忽略 */ }
+}
+(function () {
+  const saved = localStorage.getItem('vbg');
+  if (saved === 'off') document.body.classList.add('video-off');
+  const b = document.getElementById('btnVbg');
+  if (b) b.textContent = saved === 'off' ? '🌤 夏日模式' : '🎬 视频模式';
+})();
 let adbDevices = [];   // [{serial, model, state}]
 let managed = [];      // [serial] 已接入控制台的设备
 let bookRowsBySerial = {};  // 每台设备的书籍编辑缓冲(serial -> rows)
@@ -763,6 +1175,12 @@ let statusFails = 0;
 let lastPanelsSig = '';
 let lastStatusHtml = '';
 let deviceNames = {};   // {serial: 备注名} 设备备注名缓存
+let visionConfigLoaded = false;
+let visionCfg = {};
+let publisherConfigLoaded = false;
+let publisherBooks = [];
+let publisherLastLogId = 0;
+let publisherLastState = '';
 
 async function jfetch(url, opts, timeoutMs) {
   const ctrl = new AbortController();
@@ -777,7 +1195,210 @@ async function jfetch(url, opts, timeoutMs) {
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-/* 序列号规范化: "192.168.1.107" 与 "192.168.1.107:5555" 视为同一台(adb 网络设备默认端口) */
+
+/* ---------- 番茄作家自动发布 ---------- */
+function publisherMode() {
+  const checked = document.querySelector('input[name="pubMode"]:checked');
+  return checked ? checked.value : 'immediate';
+}
+function publisherModeChanged() {
+  const mode = publisherMode();
+  document.querySelectorAll('.pub-scheduled-only').forEach(el => el.classList.toggle('pub-hidden', mode !== 'scheduled'));
+  document.querySelectorAll('.pub-republish-only').forEach(el => el.classList.toggle('pub-hidden', mode !== 'republish'));
+  document.querySelectorAll('.pub-new-only').forEach(el => el.classList.toggle('pub-hidden', mode === 'republish'));
+  const button = document.getElementById('pubStart');
+  if (button) button.textContent = mode === 'republish' ? '↻ 开始重新提交' : (mode === 'scheduled' ? '◷ 建立定时发布' : '▶ 开始发布');
+}
+function publisherDefaultDate() {
+  const date = new Date(); date.setDate(date.getDate() + 1);
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+function publisherMessage(text, error) {
+  const el = document.getElementById('pubMsg');
+  if (!el) return;
+  el.className = 'msg ' + (error ? 'err' : 'ok'); el.textContent = text || '';
+}
+function publisherUnavailable(message) {
+  const blocked = document.getElementById('pubBlocked');
+  if (!blocked) return;
+  blocked.style.display = 'block';
+  blocked.textContent = message || '自动发布当前不可用';
+  document.getElementById('pubLayout').style.opacity = '.48';
+  document.getElementById('pubLayout').style.pointerEvents = 'none';
+}
+function publisherAvailable() {
+  const blocked = document.getElementById('pubBlocked');
+  if (blocked) blocked.style.display = 'none';
+  const layout = document.getElementById('pubLayout');
+  if (layout) { layout.style.opacity = ''; layout.style.pointerEvents = ''; }
+}
+async function loadPublisherConfig() {
+  try {
+    const r = await jfetch('/api/publisher/config', {}, 7000);
+    if (!r || r.error) throw new Error((r && r.error) || '配置读取失败');
+    publisherAvailable();
+    if (!publisherConfigLoaded) {
+      document.getElementById('pubSourceDir').value = r.source_dir || '';
+      document.getElementById('pubArchiveDir').value = r.archive_dir || '';
+      document.getElementById('pubVisibleBrowser').checked = r.visible_browser !== false;
+      publisherConfigLoaded = true;
+    }
+    const badge = document.getElementById('pubLoginState');
+    badge.textContent = r.login_state_exists ? '凭证已保存' : '未登录';
+    badge.className = 'badge ' + (r.login_state_exists ? 'b-done' : 'b-nogift');
+    document.getElementById('pubLogin').textContent = r.login_state_exists ? '验证 / 重新登录' : '扫码登录';
+  } catch (e) {
+    publisherUnavailable(e.message || '自动发布接口未连接；服务重启后生效');
+  }
+}
+async function savePublisherConfig() {
+  publisherMessage('保存中…', false);
+  try {
+    const payload = {
+      source_dir: document.getElementById('pubSourceDir').value.trim(),
+      archive_dir: document.getElementById('pubArchiveDir').value.trim(),
+      visible_browser: !!document.getElementById('pubVisibleBrowser').checked,
+    };
+    const r = await jfetch('/api/publisher/config', { method: 'POST', body: JSON.stringify(payload) }, 10000);
+    if (r.error) throw new Error(r.error);
+    publisherConfigLoaded = false;
+    await loadPublisherConfig();
+    await refreshPublisherBooks();
+    publisherMessage(r.result || '已保存', false);
+  } catch (e) { publisherMessage(e.message || '保存失败', true); }
+}
+async function refreshPublisherBooks() {
+  const select = document.getElementById('pubBook');
+  const previous = select.value;
+  select.innerHTML = '<option value="">正在扫描…</option>';
+  try {
+    const r = await jfetch('/api/publisher/books', {}, 12000);
+    if (!r || r.error) throw new Error((r && r.error) || '扫描失败');
+    publisherAvailable();
+    publisherBooks = Array.isArray(r.books) ? r.books : [];
+    if (!publisherBooks.length) {
+      select.innerHTML = '<option value="">没有待发小说</option>';
+    } else {
+      select.innerHTML = publisherBooks.map(book =>
+        `<option value="${esc(book.name)}">${esc(book.name)} (${book.valid}/${book.count} 章有效)</option>`).join('');
+      select.value = publisherBooks.some(book => book.name === previous) ? previous : publisherBooks[0].name;
+    }
+    publisherBookChanged();
+  } catch (e) {
+    select.innerHTML = '<option value="">扫描失败</option>';
+    publisherUnavailable(e.message || '书库扫描失败');
+  }
+}
+function publisherBookChanged() {
+  const name = document.getElementById('pubBook').value;
+  const book = publisherBooks.find(item => item.name === name);
+  const info = document.getElementById('pubBookInfo');
+  if (!book) { info.textContent = '尚未扫描到稿件'; return; }
+  info.textContent = `待处理 ${book.count} 章 · 格式有效 ${book.valid} 章 · 格式异常 ${book.invalid} 章`;
+}
+async function publisherLogin() {
+  publisherMessage('正在打开登录窗口…', false);
+  try {
+    const r = await jfetch('/api/publisher/login', { method: 'POST', body: '{}' }, 10000);
+    if (r.error) throw new Error(r.error);
+    publisherMessage(r.result || '请在 Edge 中扫码', false);
+    await refreshPublisherStatus();
+  } catch (e) { publisherMessage(e.message || '无法启动登录', true); }
+}
+async function startPublisher() {
+  const book = document.getElementById('pubBook').value;
+  if (!book) { publisherMessage('请选择有有效章节的小说', true); return; }
+  const mode = publisherMode();
+  const labels = { immediate: '立即发布', scheduled: '建立定时发布', republish: '重新提交线上章节' };
+  if (!confirm(`确认对《${book}》执行“${labels[mode]}”？`)) return;
+  const payload = {
+    mode, book,
+    count: Number(document.getElementById('pubCount').value || 0),
+    volume: Number(document.getElementById('pubVolume').value || 1),
+    ai_declare: !!document.getElementById('pubAiDeclare').checked,
+    start_date: document.getElementById('pubStartDate').value,
+    publish_time: document.getElementById('pubPublishTime').value || '00:01',
+    per_day: Number(document.getElementById('pubPerDay').value || 2),
+    chapter_spec: document.getElementById('pubChapterSpec').value.trim() || 'all',
+  };
+  publisherMessage('正在创建发布任务…', false);
+  try {
+    const r = await jfetch('/api/publisher/start', { method: 'POST', body: JSON.stringify(payload) }, 10000);
+    if (r.error) throw new Error(r.error);
+    publisherMessage(r.result || '任务已启动', false);
+    await refreshPublisherStatus();
+  } catch (e) { publisherMessage(e.message || '任务启动失败', true); }
+}
+async function stopPublisher() {
+  try {
+    const r = await jfetch('/api/publisher/stop', { method: 'POST', body: '{}' }, 7000);
+    if (r.error) throw new Error(r.error);
+    publisherMessage(r.result || '已请求停止', false);
+    await refreshPublisherStatus();
+  } catch (e) { publisherMessage(e.message || '停止失败', true); }
+}
+function setPublisherRunning(running) {
+  ['pubSourceDir','pubArchiveDir','pubVisibleBrowser','pubSaveConfig','pubLogin','pubBook','pubCount','pubVolume',
+   'pubStartDate','pubPublishTime','pubPerDay','pubChapterSpec','pubAiDeclare','pubRefreshBooks','pubStart']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.disabled = running; });
+  document.querySelectorAll('input[name="pubMode"]').forEach(el => { el.disabled = running; });
+  document.getElementById('pubStop').disabled = !running;
+}
+function appendPublisherLogs(logs) {
+  if (!Array.isArray(logs) || !logs.length) return;
+  const box = document.getElementById('pubLog');
+  if (publisherLastLogId === 0) box.innerHTML = '';
+  const level = { info: '信息', success: '成功', warning: '注意', error: '错误' };
+  logs.forEach(item => {
+    box.insertAdjacentHTML('beforeend', `<div class="pub-log-line ${esc(item.level || 'info')}"><span class="t">${esc(item.time || '')}</span><span class="lv">${esc(level[item.level] || '信息')}</span><span>${esc(item.message || '')}</span></div>`);
+    publisherLastLogId = Math.max(publisherLastLogId, Number(item.id || 0));
+  });
+  while (box.children.length > 300) box.firstElementChild.remove();
+  box.scrollTop = box.scrollHeight;
+}
+async function refreshPublisherStatus() {
+  try {
+    const r = await jfetch('/api/publisher/status?after=' + publisherLastLogId, {}, 7000);
+    if (!r || r.error) throw new Error((r && r.error) || '状态读取失败');
+    publisherAvailable();
+    if (Number(r.last_log_id || 0) < publisherLastLogId) {
+      publisherLastLogId = 0;
+      document.getElementById('pubLog').innerHTML = '';
+    }
+    appendPublisherLogs(r.logs);
+    const running = ['logging_in','running','stopping'].includes(r.state);
+    setPublisherRunning(running);
+    const stateEl = document.getElementById('pubState');
+    const stateLabels = { idle:'等待操作', logging_in:'等待登录', running:'运行中', stopping:'停止中', done:'已完成', error:'发生错误' };
+    stateEl.textContent = stateLabels[r.state] || r.state || '等待操作';
+    stateEl.className = 'pill ' + (r.state === 'error' ? 'offline' : (running ? 'running' : 'idle'));
+    const current = [r.message, r.book ? `《${r.book}》` : '', r.chapter || ''].filter(Boolean).join(' · ');
+    document.getElementById('pubCurrent').textContent = current || '尚未启动发布任务';
+    const done = Number(r.current || 0), total = Number(r.total || 0);
+    const bar = document.getElementById('pubProgressBar');
+    bar.classList.toggle('waiting', running && total === 0);
+    bar.style.width = total ? Math.min(100, Math.max(0, done / total * 100)) + '%' : '';
+    document.getElementById('pubProgressText').textContent = `${done}/${total}`;
+    document.getElementById('pubSuccess').textContent = Number(r.success || 0);
+    document.getElementById('pubFailed').textContent = Number(r.failed || 0);
+    document.getElementById('pubSkipped').textContent = Number(r.skipped || 0);
+    const error = document.getElementById('pubError');
+    error.textContent = r.error || ''; error.style.display = r.error ? 'block' : 'none';
+    const login = document.getElementById('pubLoginState');
+    login.textContent = r.logged_in ? '凭证已保存' : '未登录';
+    login.className = 'badge ' + (r.logged_in ? 'b-done' : 'b-nogift');
+    document.getElementById('pubLogin').textContent = r.logged_in ? '验证 / 重新登录' : '扫码登录';
+    if (publisherLastState && ['logging_in','running','stopping'].includes(publisherLastState) && !running) {
+      refreshPublisherBooks();
+      loadPublisherConfig();
+    }
+    publisherLastState = r.state;
+  } catch (e) {
+    publisherUnavailable(e.message || '自动发布状态不可用');
+  }
+}
+/* 序列号规范化: "192.168.1.100" 与 "192.168.1.100:5555" 视为同一台(adb 网络设备默认端口) */
 function normSerial(s) {
   s = String(s || '');
   return /^\d+\.\d+\.\d+\.\d+$/.test(s) ? s + ':5555' : s;
@@ -800,6 +1421,105 @@ async function loadDeviceNames() {
     if (r && r.names) deviceNames = r.names;
     renderBookTable();
   } catch (e) { /* 静默: 服务未就绪时保持缓存 */ }
+}
+
+/* ---------- OpenAI 视觉阅读配置与实时摘要 ---------- */
+function populateVisionModels(models, selected) {
+  const select = document.getElementById('visionModel');
+  if (!select) return;
+  const clean = [...new Set((models || []).map(id => String(id || '').trim()).filter(Boolean))];
+  const current = String(selected || select.value || '').trim();
+  if (current && !clean.includes(current)) clean.unshift(current);
+  if (!clean.length) clean.push('gpt-4o-mini');
+  select.innerHTML = clean.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join('');
+  select.value = current && clean.includes(current) ? current : clean[0];
+}
+async function loadVisionConfig() {
+  try {
+    const r = await jfetch('/api/vision-config', {}, 6000);
+    if (!r || r.error) throw new Error(r && r.error || '配置读取失败');
+    visionCfg = r;
+    const set = (id, value) => { const el = document.getElementById(id); if (el && !visionConfigLoaded) el.value = value == null ? '' : value; };
+    if (!visionConfigLoaded) {
+      document.getElementById('visionEnabled').checked = !!r.enabled;
+      document.getElementById('visionSummaryEnabled').checked = r.summary_enabled !== false;
+      set('visionBaseUrl', r.base_url); populateVisionModels([r.model], r.model); set('visionDetail', r.detail || 'high');
+      set('visionConcurrency', r.concurrency || 2); set('visionMaxPages', r.max_pages || 240); set('visionTimeout', r.timeout || 30);
+      visionConfigLoaded = true;
+    }
+    const state = document.getElementById('visionKeyState');
+    if (state) { state.textContent = r.api_key_configured ? 'Key 已配置' : '未配置 Key'; state.className = 'badge ' + (r.api_key_configured ? 'b-on' : 'b-nogift'); }
+  } catch (e) {
+    const msg = document.getElementById('visionCfgMsg'); if (msg) { msg.className = 'msg err'; msg.textContent = '视觉配置读取失败'; }
+  }
+}
+function toggleVisionKey() {
+  const input = document.getElementById('visionApiKey');
+  const button = document.getElementById('visionKeyToggle');
+  if (!input || !button) return;
+  const willShow = input.type === 'password';
+  input.type = willShow ? 'text' : 'password';
+  button.textContent = willShow ? '○' : '◉';
+  button.title = willShow ? '隐藏 API Key' : '显示 API Key';
+  button.setAttribute('aria-label', button.title);
+}
+async function detectVisionModels() {
+  const button = document.getElementById('visionModelDetect');
+  const msg = document.getElementById('visionModelsMsg');
+  if (!button || !msg) return;
+  button.disabled = true; button.textContent = '检测中…';
+  msg.className = 'msg'; msg.textContent = '正在读取 /models…';
+  try {
+    const payload = {
+      base_url: document.getElementById('visionBaseUrl').value.trim(),
+      api_key: document.getElementById('visionApiKey').value.trim(),
+      timeout: Number(document.getElementById('visionTimeout').value || 30),
+    };
+    const r = await jfetch('/api/vision-models', { method: 'POST', body: JSON.stringify(payload) }, 70000);
+    if (r.error) throw new Error(r.error);
+    const list = Array.isArray(r.models) ? r.models : [];
+    const modelSelect = document.getElementById('visionModel');
+    const currentModel = modelSelect.value.trim();
+    populateVisionModels(list, currentModel);
+    msg.className = 'msg ok'; msg.textContent = `检测到 ${list.length} 个模型 · ${r.checked_at || ''}`;
+  } catch (e) {
+    msg.className = 'msg err'; msg.textContent = '模型检测失败: ' + (e.message || '服务无响应');
+  } finally { button.disabled = false; button.textContent = '检测模型'; }
+}
+async function saveVisionConfig() {
+  const val = id => document.getElementById(id);
+  const payload = {
+    enabled: !!val('visionEnabled').checked,
+    base_url: val('visionBaseUrl').value.trim(), api_key: val('visionApiKey').value.trim(),
+    model: val('visionModel').value.trim(), detail: val('visionDetail').value,
+    concurrency: Number(val('visionConcurrency').value || 2), max_pages: Number(val('visionMaxPages').value || 240),
+    timeout: Number(val('visionTimeout').value || 30), summary_enabled: !!val('visionSummaryEnabled').checked,
+  };
+  const msg = document.getElementById('visionCfgMsg'); msg.className = 'msg'; msg.textContent = '保存中…';
+  try {
+    const r = await jfetch('/api/vision-config', { method: 'POST', body: JSON.stringify(payload) }, 10000);
+    if (r.error) throw new Error(r.error);
+    visionCfg = r.config || visionCfg; val('visionApiKey').value = '';
+    msg.className = 'msg ok'; msg.textContent = r.result || '已保存';
+    loadVisionConfig();
+  } catch (e) { msg.className = 'msg err'; msg.textContent = e.message || '保存失败'; }
+}
+function visionStatusLabel(v) {
+  return ({ready:'等待截图', extracting:'识别页面中', summarizing:'生成章节摘要', idle:'等待下一页', done:'已完成', error:'调用失败', limit:'达到页数上限', disabled:'未启用'})[v] || v || '空闲';
+}
+function renderVision() {
+  const el = document.getElementById('visionDevices'); if (!el) return;
+  const list = statusDevs.filter(d => d.vision && (d.vision.enabled || d.vision.status !== 'disabled' || d.running));
+  if (!list.length) { el.innerHTML = '<div class="empty-hint">暂无运行中的视觉阅读任务。启动自动化并配置 AI Key 后，这里会实时显示逐页识别和章节摘要。</div>'; return; }
+  el.innerHTML = list.map(d => {
+    const v = d.vision || {};
+    const submitted = Number(v.pages_submitted || 0), extracted = Number(v.pages_extracted || 0), failed = Number(v.pages_failed || 0);
+    const width = Math.min(100, submitted ? Math.max(5, extracted / submitted * 100) : 0);
+    const latest = v.summary ? `<div class="vision-summary"><small>${esc(v.chapter || '最近章节')} · ${esc(v.updated_at || '')}</small>${esc(v.summary)}</div>` : '';
+    const error = v.error ? `<div class="vision-status error">⚠ ${esc(v.error)}</div>` : '';
+    const status = d.running ? visionStatusLabel(v.status) : (v.status === 'done' ? '任务完成' : visionStatusLabel(v.status));
+    return `<div class="vision-device"><div class="vision-device-head"><code>${devNameHtml(d.serial)}</code><span class="pill ${v.status === 'error' ? 'offline' : (d.running ? 'running' : 'idle')}">${esc(status)}</span><span class="step-tag">${esc(v.chapter || '尚未识别章节')}</span></div><div class="vision-status">当前页 ${v.current_page || '-'} · 已投递 ${submitted} 页</div><div class="vision-bar"><i style="width:${width}%"></i></div><div class="vision-stats"><span>识别成功 ${extracted}</span><span>失败 ${failed}</span><span>摘要 ${Array.isArray(v.summaries) ? v.summaries.length : 0} 章</span></div>${error}${latest}</div>`;
+  }).join('');
 }
 /* 编辑设备备注名 */
 async function editDeviceName(serial) {
@@ -846,6 +1566,7 @@ async function refreshStatus() {
     renderBookTable();
     refreshBookPills();
     renderSummary();
+    renderVision();
     statusFails = 0;
     document.getElementById('connBanner').style.display = 'none';
   } catch (e) {
@@ -1142,6 +1863,13 @@ function renderModalRows() {
         <span class="row-label">书评</span>
       </span>
       <span class="grp">
+        <label class="switch" title="是否对这本书逐页识别正文并生成章节摘要, 取消勾选=不进行 AI 总结">
+          <input type="checkbox" ${b.ai_summary !== false ? 'checked' : ''} onchange="mRows[${i}].ai_summary=this.checked">
+          <span class="slider"></span>
+        </label>
+        <span class="row-label">AI总结</span>
+      </span>
+      <span class="grp">
         <label class="switch" title="读这本书时加入书架, 取消勾选=不加入书架">
           <input type="checkbox" ${b.add_shelf !== false ? 'checked' : ''} onchange="mRows[${i}].add_shelf=this.checked">
           <span class="slider"></span>
@@ -1168,7 +1896,7 @@ document.getElementById('bookModal').addEventListener('click', (e) => {
 });
 
 function addBookInModal() {
-  mRows.push({ name: '', enabled: true, gift: false, gift_count: 3, urge: true, review: true, add_shelf: true, completed: false, update_time: '' });
+  mRows.push({ name: '', enabled: true, gift: false, gift_count: 3, urge: true, review: true, ai_summary: true, add_shelf: true, completed: false, update_time: '' });
   renderModalRows();
 }
 
@@ -1206,6 +1934,7 @@ function openAddBookModal() {
   document.getElementById('abGiftCount').value = 3;
   document.getElementById('abUrge').checked = true;
   document.getElementById('abReview').checked = true;
+  document.getElementById('abAiSummary').checked = true;
   document.getElementById('abAddShelf').checked = true;
   document.getElementById('abCompleted').checked = false;
   document.getElementById('abUpdateTime').value = '';
@@ -1243,6 +1972,7 @@ async function saveAddBookModal() {
     gift_count: parseInt(document.getElementById('abGiftCount').value || 3, 10),
     urge: document.getElementById('abUrge').checked,
     review: document.getElementById('abReview').checked,
+    ai_summary: document.getElementById('abAiSummary').checked,
     add_shelf: document.getElementById('abAddShelf').checked,
     completed: document.getElementById('abCompleted').checked,
     update_time: document.getElementById('abUpdateTime').value
@@ -1371,7 +2101,11 @@ function tick() {
 /* ---------- Tab 多页面切换 ---------- */
 function switchTab(name) {
   document.querySelectorAll('.tab-page').forEach(p => { p.hidden = p.id !== 'pg-' + name; });
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.tab').forEach(t => {
+    const isActive = t.dataset.tab === name;
+    t.classList.toggle('active', isActive);
+    t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
 }
 
 /* ---------- 总览运行摘要 ---------- */
@@ -1459,8 +2193,11 @@ document.querySelectorAll('.card').forEach(card => {
   btn.addEventListener('click', () => card.classList.toggle('collapsed'));
   h2.appendChild(btn);
 });
-loadCfg(); starLoad(); refreshDevices(); refreshStatus(); refreshShot(); refreshLog(); refreshHealth(); tick(); loadDeviceNames();
+document.getElementById('pubStartDate').value = publisherDefaultDate();
+publisherModeChanged();
+loadCfg(); starLoad(); loadVisionConfig(); loadPublisherConfig(); refreshPublisherBooks(); refreshPublisherStatus(); refreshDevices(); refreshStatus(); refreshShot(); refreshLog(); refreshHealth(); tick(); loadDeviceNames();
 setInterval(refreshStatus, 2000);
+setInterval(refreshPublisherStatus, 2000);
 setInterval(refreshDevices, 5000);
 setInterval(refreshShot, 4000);
 setInterval(refreshLog, 5000);
